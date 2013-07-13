@@ -255,6 +255,33 @@ class CueParser:
 	def parse(self, cmd, arg):
 		self.commands.get(cmd.lower(), self.parse_default)(*self.split_args(arg))
 
+	def calc_offsets(self):
+		for file in self.cue._files:
+			previous = None
+			for track in file._tracks:
+				track.begin = None
+				track.end = None
+
+				pregap = track.get("pregap")
+				if pregap is None and 0 in track._indexes:
+					pregap = track._indexes[0]
+				if pregap is not None and previous and previous.end is None:
+					previous.end = pregap
+
+				try:
+					track.begin = min([v for k, v in track._indexes.items() if k != 0])
+				except:
+					continue
+
+				if previous and previous.end is None:
+					previous.end = track.begin if pregap is None else pregap
+
+				postgap = track.get("postgap")
+				if postgap is not None:
+					track.end = postgap
+
+				previous = track
+
 def __read_file(filename):
 	f = open(filename, "rb")
 	data = f.read()
@@ -314,4 +341,5 @@ def read_cue(filename, on_error = None):
 		except CueParserError as err:
 			msg("%s", err)
 
+	parser.calc_offsets()
 	return parser.get_cue()
