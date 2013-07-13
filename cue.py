@@ -1,7 +1,7 @@
+from cchardet import detect as encoding_detect
+import codecs
 import sys
-
-def printf(fmt, *args):
-	sys.stdout.write(fmt % args)
+import re
 
 class Track:
 	def __init__(self, number, datatype):
@@ -11,13 +11,13 @@ class Track:
 			raise InvalidCommand("invalid number \"%s\"" % number)
 
 		self.datatype = datatype
-		self.indexes = []
-
-		self.performer = ""
-		self.title = ""
+		self.indexes = {}
+		self.attrs = {}
 	
-	def get_number():
-		return self.number
+	def get(self, attr):
+		return self.attrs.get(attr,
+			None if attr in ("pregap", "postgap") else ""
+		)
 
 class File:
 	def __init__(self, name, filetype):
@@ -28,19 +28,21 @@ class File:
 	def __repr__(self):
 		return self.name
 	
-	def get_type(self):
+	def type(self):
 		return self.filetype
 
 class Cue:
 	def __init__(self):
-		self.performer = ""
-		self.title = ""
+		self.attrs = {}
 
 		self.tracks = []
 		self.files = []
 
-	def get_tracks(self):
+	def tracks(self):
 		return self.tracks
+
+	def get(self, attr):
+		return self.attrs.get(attr, "")
 
 class CueParserError(Exception):
 	pass
@@ -54,36 +56,75 @@ class InvalidCommand(CueParserError):
 class InvalidContext(CueParserError):
 	pass
 
-def check_argc(count):
+class Context:
+	(
+		GENERAL,
+		TRACK,
+		FILE
+	) = range(3)
+	
+def check(count = None, context = None):
 	def deco(func):
 		def method(cls, *lst):
-			n = len(lst)
-			if n != count:
-				raise InvalidCommand("%d args expected, got %d" % (count, n))
+			if count is not None:
+				n = len(lst)
+				if n != count:
+					raise InvalidCommand(
+						"%d arg%s expected, got %d" %
+						(count, "s" if count > 1 else "", n)
+					)
+			if context is not None:
+				if type(context) in (list, tuple):
+					if cls.context not in context:
+						raise InvalidContext
+				elif cls.context != context:
+					raise InvalidContext
 			func(cls, *lst)
 		return method
 	return deco
 
 class CueParser:
-	(
-		GENERAL,
-		TRACK
-		FILE,
-	) = range(3)
+	re_timestamp = re.compile("^[\d]{1,3}:[\d]{1,2}:[\d]{1,2}$")
+	rem_commands = ('genre', 'data', 'comment')
 
-	def __init__(self, msg):
+	def __init__(self):
+		def do_set_attr(name, cue = False, track = False, convert = None):
+			def func(*args):
+				n = len(args)
+				if n != 1:
+					raise InvalidCommand("1 arg expected, got %d" % n)
+				opt = {}
+				if cue:
+					opt[Context.GENERAL] = self.cue
+				if track:
+					opt[Context.TRACK] = self.track
+
+				arg = convert(args[0]) if convert else args[0]
+				self.set_attr(name, arg, opt)
+			return func
+
 		self.cue = Cue()
-		self.context = self.GENERAL
-		self.commands = {
-			"file": self.parse_file,
-			"track": self.parse_track,
-			"index": self.parse_index,
-			"title": self.parse_title,
-			"performer": self.parse_performer,
-			"flags": self.parse_flags
-		}
+		self.context = Context.GENERAL
+		self.track = None
+		self.file = None
 
-		self.msg = msg
+		self.commands = {
+			"file": 	self.parse_file,
+			"flags": 	self.parse_flags,
+			"index": 	self.parse_index,
+			"pregap": 	self.parse_pregap,
+			"rem":		self.parse_rem,
+			"track": 	self.parse_track,
+
+			"catalog":	do_set_attr("catalog", cue = True),
+			"performer":	do_set_attr("performer", cue = True, track = True),
+			"postgap": 	do_set_attr("postgap", track = True, convert = self.parse_timestamp),
+			"songwriter":	do_set_attr("songwriter", cue = True, track = True),
+			"title": 	do_set_attr("title", cue = True, track = True),
+
+			"cdtextfile":	self.parse_skip,
+			"isrc":		self.parse_skip,
+		}
 
 	@staticmethod
 	def split_args(args):
@@ -116,75 +157,124 @@ class CueParser:
 			push()
 
 		return lst
+	
+	@staticmethod
+	def parse_timestamp(time):
+		if not CueParser.re_timestamp.match(time):
+			raise InvalidCommand("invalid timestamp \"%s\"" % time)
 
-	def get_cue():
-		return cue
+		m, s, f = map(int, time.split(":"))
+		return (m * 60 + s) * 75 + f
 
-	@check_argc(2)
+	def get_cue(self):
+		return self.cue
+
+	@check(2)
 	def parse_file(self, *args):
-		self.last_file = File(*args)
-		self.cue.files.append(self.last_file)
-		self.context = self.FILE
+		self.file = File(*args)
+		self.cue.files.append(self.file)
+		self.context = Context.FILE
 	
-	@check_argc(2)
+	@check(2, (Context.FILE, Context.TRACK))
 	def parse_track(self, *args):
-		if self.context != self.FILE:
-			raise InvalidContext
-
-		self.last_track = Track(*args)
-		self.cue.tracks.append(self.last_track)
-		self.last_file.tracks.append(self.last_track)
-		self.context = self.TRACK
+		self.track = Track(*args)
+		self.cue.tracks.append(self.track)
+		self.file.tracks.append(self.track)
+		self.context = Context.TRACK
 	
-	def set_prop(self, attr, value, opt):
-		obj = opt.get(self.context)
-		if obj is None:
-			raise InvalidContext
+	@check(2, Context.TRACK)
+	def parse_index(self, number, time):
+		if "postgap" in self.track.attrs:
+			raise InvalidCommand("after POSTGAP")
+		try:
+			number = int(number)
+		except ValueError:
+			raise InvalidCommand("invalid number \"%s\"" % number)
+		if number is 0 and "pregap" in self.track.attrs:
+			raise InvalidCommand("conflict with previous PREGAP")
+		if number in self.track.indexes:
+		 	raise InvalidCommand("duplicate index number %d" % number)
 
-		if getattr(obj, attr):
+		self.track.indexes[number] = self.parse_timestamp(time)
+	
+	@check(1, Context.TRACK)
+	def parse_pregap(self, time):
+		if self.track.indexes:
+			raise InvalidCommand("must appear before any INDEX commands for the current track")
+		self.set_attr("pregap", self.parse_timestamp(time), obj = self.track)
+	
+	def set_attr(self, attr, value, opt = None, obj = None):
+		if opt is not None:
+			obj = opt.get(self.context)
+			if obj is None:
+				raise InvalidContext
+		elif obj is None:
+			raise CueParserError("CueParserError.set_attr: invalid usage")
+
+		if attr in obj.attrs:
 			raise InvalidCommand("duplicate")
 
-		setattr(obj, attr, value)
+		obj.attrs[attr] = value
 	
-	@check_argc(1):
-	def parse_title(self, title):
-		self.set_prop("title", title, {
-			self.GENERAL: self.cue,
-			self.TRACK: self.last_track
-		})
-	
-	@check_argc(1)
-	def parse_performer(self, performer):
-		self.set_prop("performer", performer, {
-			self.GENERAL: self.cue,
-			self.TRACK: self.last_track
-		})
-
+	@check(context = Context.TRACK)
 	def parse_flags(self, *flags):
-		if self.context != self.TRACK:
-			raise InvalidContext
-		if self.last_track.indexes:
+		if self.track.indexes:
 			raise InvalidCommand("must appear before any INDEX commands")
+	
+	def parse_rem(self, opt, value = None, *args):
+		cmd = opt.lower()
+		if value and cmd in self.rem_commands:
+			if len(args):
+				raise InvalidCommand("extra arguments for \"%s\"" % opt)
+			self.set_attr(cmd, value, obj = self.cue)
 
-	def parse_default(self, args):
+	def parse_skip(self, *args):
+		pass
+
+	def parse_default(self, *args):
 		raise UnknownCommand
 
 	def parse(self, cmd, arg):
-		self.commands.get(cmd.lower(), parse_default)(*self.split_args(arg))
+		self.commands.get(cmd.lower(), self.parse_default)(*self.split_args(arg))
 
-def read_cuesheet(filename):
-	def msg(fmt, args):
-		printf("read_cuesheet %s:%d: ", filename, nline)
-		printf(fmt, args)
+def __read_file(filename):
+	f = open(filename, "rb")
+	data = f.read()
+	f.close()
 
-		if not fmt.endswith("\n"):
-			printf("\n")
+	encoded = None
+	try:
+		encoded = data.decode("utf-8-sig")
+	except UnicodeDecodeError:
+		pass
+	
+	if encoded is None:
+		enc = encoding_detect(data)
+		if enc is None:
+			raise Exception("autodetect failed")
+		encoding = enc["encoding"]
+		try:
+			encoded = data.decode(encoding)
+		except UnicodeDecodeError:
+			raise Exception("autodetect failed: invalid encoding %s" % encoding)
 
-	fp = open(filename)
-	parser = CueParser(msg)
+	return encoded
+
+def read_cue(filename, on_error = None):
+	if on_error:
+		def msg(fmt, *args):
+			err = CueParserError(fmt % args)
+			err.line = nline
+			on_error(err)
+	else:
+		msg = lambda *args: None
+
+	cuefile = __read_file(filename)
+	parser = CueParser()
+
 	nline = 0
 
-	for line in fp.readlines():
+	for line in cuefile.split("\n"):
 		nline = nline + 1
 		s = line.strip()
 		if not len(s):
@@ -192,7 +282,7 @@ def read_cuesheet(filename):
 
 		data = s.split(None, 1)
 		if len(data) is 1:
-			msg("arg missed")
+			msg("invalid command \"%s\": arg missed", data[0])
 			continue
 
 		try:
@@ -206,5 +296,4 @@ def read_cuesheet(filename):
 		except CueParserError as err:
 			msg("%s", err)
 
-	fp.close()
 	return parser.get_cue()
