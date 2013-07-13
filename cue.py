@@ -3,6 +3,12 @@ import codecs
 import sys
 import re
 
+def sort_iter(d):
+	def over(d):
+		for k in sorted(d.keys()):
+			yield k, d[k]
+	return iter(over(d))
+
 class Track:
 	def __init__(self, number, datatype):
 		try:
@@ -10,39 +16,52 @@ class Track:
 		except ValueError:
 			raise InvalidCommand("invalid number \"%s\"" % number)
 
-		self.datatype = datatype
-		self.indexes = {}
-		self.attrs = {}
-	
+		self.type = datatype
+		self._indexes = {}
+		self._attrs = {}
+
+	def attrs(self):
+		return sort_iter(self._attrs)
+
+	def indexes(self):
+		return sort_iter(self._indexes)
+
 	def get(self, attr):
-		return self.attrs.get(attr,
+		return self._attrs.get(attr,
 			None if attr in ("pregap", "postgap") else ""
 		)
 
 class File:
 	def __init__(self, name, filetype):
 		self.name = name
-		self.filetype = filetype
-		self.tracks = []
-	
+		self.type = filetype
+		self._tracks = []
+
+	def tracks(self):
+		return iter(self._tracks)
+
+	def add_track(self, track):
+		self._tracks.append(track)
+
 	def __repr__(self):
 		return self.name
-	
-	def type(self):
-		return self.filetype
 
 class Cue:
 	def __init__(self):
-		self.attrs = {}
+		self._attrs = {}
+		self._files = []
 
-		self.tracks = []
-		self.files = []
+	def attrs(self):
+		return sort_iter(self._attrs)
 
-	def tracks(self):
-		return self.tracks
+	def files(self):
+		return iter(self._files)
 
 	def get(self, attr):
-		return self.attrs.get(attr, "")
+		return self._attrs.get(attr, "")
+
+	def add_file(self, file):
+		self._files.append(file)
 
 class CueParserError(Exception):
 	pass
@@ -62,7 +81,7 @@ class Context:
 		TRACK,
 		FILE
 	) = range(3)
-	
+
 def check(count = None, context = None):
 	def deco(func):
 		def method(cls, *lst):
@@ -157,7 +176,7 @@ class CueParser:
 			push()
 
 		return lst
-	
+
 	@staticmethod
 	def parse_timestamp(time):
 		if not CueParser.re_timestamp.match(time):
@@ -172,37 +191,36 @@ class CueParser:
 	@check(2)
 	def parse_file(self, *args):
 		self.file = File(*args)
-		self.cue.files.append(self.file)
+		self.cue.add_file(self.file)
 		self.context = Context.FILE
-	
+
 	@check(2, (Context.FILE, Context.TRACK))
 	def parse_track(self, *args):
 		self.track = Track(*args)
-		self.cue.tracks.append(self.track)
-		self.file.tracks.append(self.track)
+		self.file.add_track(self.track)
 		self.context = Context.TRACK
-	
+
 	@check(2, Context.TRACK)
 	def parse_index(self, number, time):
-		if "postgap" in self.track.attrs:
+		if "postgap" in self.track._attrs:
 			raise InvalidCommand("after POSTGAP")
 		try:
 			number = int(number)
 		except ValueError:
 			raise InvalidCommand("invalid number \"%s\"" % number)
-		if number is 0 and "pregap" in self.track.attrs:
+		if number is 0 and "pregap" in self.track._attrs:
 			raise InvalidCommand("conflict with previous PREGAP")
-		if number in self.track.indexes:
+		if number in self.track._indexes:
 		 	raise InvalidCommand("duplicate index number %d" % number)
 
-		self.track.indexes[number] = self.parse_timestamp(time)
-	
+		self.track._indexes[number] = self.parse_timestamp(time)
+
 	@check(1, Context.TRACK)
 	def parse_pregap(self, time):
-		if self.track.indexes:
+		if self.track._indexes:
 			raise InvalidCommand("must appear before any INDEX commands for the current track")
 		self.set_attr("pregap", self.parse_timestamp(time), obj = self.track)
-	
+
 	def set_attr(self, attr, value, opt = None, obj = None):
 		if opt is not None:
 			obj = opt.get(self.context)
@@ -211,16 +229,16 @@ class CueParser:
 		elif obj is None:
 			raise CueParserError("CueParserError.set_attr: invalid usage")
 
-		if attr in obj.attrs:
+		if attr in obj._attrs:
 			raise InvalidCommand("duplicate")
 
-		obj.attrs[attr] = value
-	
+		obj._attrs[attr] = value
+
 	@check(context = Context.TRACK)
 	def parse_flags(self, *flags):
-		if self.track.indexes:
+		if self.track._indexes:
 			raise InvalidCommand("must appear before any INDEX commands")
-	
+
 	def parse_rem(self, opt, value = None, *args):
 		cmd = opt.lower()
 		if value and cmd in self.rem_commands:
@@ -247,7 +265,7 @@ def __read_file(filename):
 		encoded = data.decode("utf-8-sig")
 	except UnicodeDecodeError:
 		pass
-	
+
 	if encoded is None:
 		enc = encoding_detect(data)
 		if enc is None:

@@ -26,6 +26,9 @@ def msf(ts):
 
 	return "%d:%d:%d" % (m, s, f)
 
+def quote(s):
+	return s if " " not in s else "\"%s\"" % s
+
 progname = basename(sys.argv[0])
 if len(sys.argv) != 2:
 	printf("Usage: %s cuefile\n", progname)
@@ -40,22 +43,22 @@ except Exception as err:
 	sys.exit(1)
 
 printf("Cue attributes:\n")
-for key in sorted(cue.attrs.keys()):
-	printf("\t%s = %s\n", key, cue.attrs[key])
+for k, v in cue.attrs():
+	printf("\t%s = %s\n", k, quote(v))
 
-for file in cue.files:
-	printf("File \"%s\" %s\n", file, file.type())
-	for track in file.tracks:
+for file in cue.files():
+	printf("File %s %s\n", quote(repr(file)), file.type)
+	for track in file.tracks():
 		printf("\tTrack %d\n", track.number)
 		pregap = track.get("pregap")
 		postgap = track.get("postgap")
-		for key in sorted(track.attrs.keys()):
-			if key not in ("pregap", "postgap"):
-				printf("\t\t%s = %s\n", key, track.attrs[key])
+		for k, v in track.attrs():
+			if k not in ("pregap", "postgap"):
+				printf("\t\t%s = %s\n", k, quote(v))
 		if pregap is not None:
 			printf("\t\tPregap %s\n", msf(pregap))
-		for key in sorted(track.indexes.keys()):
-			printf("\t\tIndex %d %s\n", key, msf(track.indexes[key]))
+		for k, v in track.indexes():
+			printf("\t\tIndex %d %s\n", k, msf(v))
 		if postgap is not None:
 			printf("\t\tPostgap %s\n", msf(postgap))
 sys.exit(0)
