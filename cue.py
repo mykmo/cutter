@@ -104,7 +104,7 @@ def check(count = None, context = None):
 
 class CueParser:
 	re_timestamp = re.compile("^[\d]{1,3}:[\d]{1,2}:[\d]{1,2}$")
-	rem_commands = ('genre', 'data', 'comment')
+	rem_commands = ('genre', 'date', 'comment')
 
 	def __init__(self):
 		def do_set_attr(name, cue = False, track = False, convert = None):
