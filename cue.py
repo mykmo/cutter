@@ -31,17 +31,32 @@ class Track:
 			None if attr in ("pregap", "postgap") else ""
 		)
 
+	def isaudio(self):
+		return self.type == "AUDIO" and self.begin is not None
+
 class File:
 	def __init__(self, name, filetype):
 		self.name = name
 		self.type = filetype
 		self._tracks = []
 
-	def tracks(self):
-		return iter(self._tracks)
+	def tracks(self, audio_only = False):
+		return filter(Track.isaudio if audio_only else None, self._tracks)
 
 	def add_track(self, track):
 		self._tracks.append(track)
+
+	def isaudio(self):
+		return self.type == "WAVE"
+
+	def has_audio_tracks(self):
+		return len(self.tracks(Track)) > 0
+
+	def split_points(self, info):
+		rate = info.sample_rate * info.bits_per_sample * info.channels / 8
+
+		for track in self.tracks(True)[1:]:
+			yield rate * track.begin / 75
 
 	def __repr__(self):
 		return self.name
@@ -54,8 +69,8 @@ class Cue:
 	def attrs(self):
 		return sort_iter(self._attrs)
 
-	def files(self):
-		return iter(self._files)
+	def files(self, audio_only = False):
+		return filter(File.isaudio if audio_only else None, self._files)
 
 	def get(self, attr):
 		return self._attrs.get(attr, "")

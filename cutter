@@ -3,9 +3,11 @@
 from os.path import basename, dirname
 from cue import read_cue
 
-import audiotools
-import audiotools.text as _
+from optparse import OptionParser, OptionGroup
+from subprocess import Popen as popen, PIPE
+import mutagen
 import sys
+import os
 
 progname = basename(sys.argv[0])
 
@@ -32,6 +34,12 @@ def printerr(fmt, *args):
 		msg += "\n"
 	sys.stderr.write("** " + progname + ": " + msg)
 
+def debug(fmt, *args):
+	msg = fmt % args
+	if msg[-1] != "\n":
+		msg += "\n"
+	sys.stderr.write("-- " + msg)
+
 def quote(s):
 	return s if " " not in s else "\"%s\"" % s
 
@@ -46,27 +54,24 @@ def print_cue(cue):
 	for k, v in cue.attrs():
 		printf("%s: %s\n", k.upper(), quote(v))
 
-	for file in cue.files():
-		if file.type != "WAVE":
-			continue
+	for file in cue.files(audio_only = True):
+		name = cue.path + file.name
 
-		name = "%s/%s" % (cue.path, file.name)
+		printf("FILE %s", quote(file.name))
 		try:
-			fp = audiotools.open(name)
+			fp = mutagen.File(name)
 		except IOError:
-			printerr("unable to open file %s", quote(file.name))
-			continue
-		except audiotools.UnsupportedFile:
-			printerr("%s: unsupported file", quote(file.name))
-			continue
+			printf(": unable to open\n")
+		else:
+			if fp is None:
+				printf(": unknown type\n")
+			else:
+				printf(" (%d/%d, %d ch)\n",
+					fp.info.bits_per_sample,
+					fp.info.sample_rate,
+					fp.info.channels)
 
-		printf("FILE %s (%d/%d, %d ch)\n", quote(file.name),
-			fp.bits_per_sample(), fp.sample_rate(), fp.channels())
-
-		for track in file.tracks():
-			if track.begin is None:
-				continue
-
+		for track in file.tracks(audio_only = True):
 			printf("\tTRACK %02d", track.number)
 			title = track.get("title")
 			if title != "":
@@ -81,7 +86,7 @@ def print_cue(cue):
 					printf("\t\t%s: %s\n", k.upper(), quote(v))
 
 def parse_args():
-	parser = audiotools.OptionParser(usage = u"Usage: %prog [options] cuefile")
+	parser = OptionParser(usage = u"Usage: %prog [options] cuefile")
 	parser.add_option(
 		"--ignore",
 		action="store_true",
@@ -96,21 +101,13 @@ def parse_args():
 		dest="dump",
 		help="print the content of cue file")
 
-	conversion = audiotools.OptionGroup(parser, _.OPT_CAT_ENCODING)
+	parser.add_option(
+		"-n", "--dry-run",
+		action="store_true",
+		default=False,
+		dest="dry_run")
 
-	conversion.add_option(
-		'-t', '--type',
-		action='store',
-		dest='type',
-		choices=sorted(audiotools.TYPE_MAP.keys()),
-		help=_.OPT_TYPE)
-
-	conversion.add_option(
-		'-q', '--quality',
-		action='store',
-		type='string',
-		dest='quality',
-		help=_.OPT_QUALITY)
+	conversion = OptionGroup(parser, "Encoding options")
 
 	conversion.add_option(
 		'-d', '--dir',
@@ -118,22 +115,129 @@ def parse_args():
 		type='string',
 		dest='dir',
 		default='.',
-		help=_.OPT_DIR)
+		help="output directory")
 
 	conversion.add_option(
-		'--format',
-		action='store',
-		type='string',
-		default=audiotools.FILENAME_FORMAT,
-		dest='format',
-		help=_.OPT_FORMAT)
+		"-C", "--compression",
+		action="store",
+		type="int",
+		dest="compression",
+		default=8,
+		help="compression factor for output format")
 
 	parser.add_option_group(conversion)
 
+	format = OptionGroup(parser, "Output Format")
+
+	format.add_option(
+		"-r", "--sample-rate",
+		action='store',
+		type='int',
+		dest='sample_rate',
+		default=44100,
+		metavar="RATE")
+
+	format.add_option(
+		"-c", "--channels",
+		action='store',
+		type='int',
+		default=2,
+		dest='channels')
+
+	format.add_option(
+		"-b", "--bits-per-sample",
+		action='store',
+		type='int',
+		dest='bits_per_sample',
+		default=16,
+		metavar="BITS")
+
+	parser.add_option_group(format)
+
 	return parser.parse_args()
+
+def verify_options(opt):
+	if opt.compression < 0 or opt.compression > 8:
+		printerr("invalid compression value %d, must be in range 0 .. 8", opt.compression)
+		sys.exit(1)
+
+def cue_open_files(cue):
+	lst = []
+
+	for file in cue.files(True):
+		if not file.has_audio_tracks():
+			debug("skip file %s: no tracks", quote(file.name))
+			continue
+
+		name = cue.path + file.name
+		try:
+			fp = mutagen.File(name)
+		except IOError:
+			printerr("unable to open file %s", quote(file.name))
+			sys.exit(1)
+		else:
+			if fp is None:
+				printerr("%s: unknown type", quote(file.name))
+				sys.exit(1)
+
+		lst.append((file, name, fp.info))
+
+	return lst
+
+def build_decode_command(opt, info):
+	cmd = "flac sox - -C %d " % opt.compression
+	if opt.sample_rate != info.sample_rate:
+		cmd += "-r %d " % opt.sample_rate
+	if opt.bits_per_sample != info.bits_per_sample:
+		cmd += "-b %d " % opt.bits_per_sample
+	if opt.channels != info.channels:
+		cmd += "-c %d " % opt.channels
+	return cmd + "%f"
+
+def splitted_tracks(dir):
+	return sorted([f for f in os.listdir(dir) if f.startswith("split-track")])
+
+def cue_split(cue, opt):
+	tracknumber = 0
+	for file, name, info in cue_open_files(cue):
+		points = list(file.split_points(info))
+		if not points:
+			debug("skip file %s: single track", quote(file.name))
+			continue
+
+		decode = build_decode_command(opt, info)
+		args = ["shnsplit", "-w", "-d", opt.dir, "-o", decode, name]
+		debug("run %s", " ".join(map(quote, args)))
+
+		if opt.dry_run:
+			continue
+
+		proc = popen(args, stdin = PIPE)
+		proc.stdin.write("\n".join(map(str, points)))
+		proc.stdin.close()
+
+		ret = proc.wait()
+		if ret != 0:
+			printerr("shnsplit failed: exit code %d", ret)
+			sys.exit(1)
+
+		for track, fname in zip(file.tracks(True), splitted_tracks(opt.dir)):
+			tracknumber += 1
+			title = track.get("title") or "track"
+			newname = "%02d.%s.flac" % (tracknumber, title)
+
+			printf("Rename [%s] --> [%s] : ", fname, newname)
+			try:
+				os.rename(opt.dir + "/" + fname, opt.dir + "/" + newname)
+			except OSError as err:
+				printf("FAILED: %s\n", err)
+				sys.exit(1)
+			else:
+				printf("OK\n")
 
 def main():
 	options, args = parse_args()
+	verify_options(options)
 
 	if len(args) != 1:
 		printf("Usage: %s [options] cuefile\n", progname)
@@ -145,17 +249,24 @@ def main():
 			raise StopIteration
 
 	try:
-		cue = read_cue(args[0], on_error=on_error)
+		cue = read_cue(args[0].decode("utf-8"), on_error=on_error)
 	except StopIteration:
 		return 1
+	except IOError as err:
+		printerr("open %s: %s", err.filename, err.strerror)
+		return 1
 	except Exception as err:
-		printerr("read_cue failed: %s: %s\n", err.__class__.__name__, err)
+		printerr("read_cue failed: %s: %s\n", err.__class__.__name__, err.filename)
 		return 1
 
 	cue.path = dirname(args[0]).decode("utf-8")
+	if cue.path:
+		cue.path += "/"
 
 	if options.dump:
 		print_cue(cue)
+	else:
+		cue_split(cue, options)
 
 	return 0
 
