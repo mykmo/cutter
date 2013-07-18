@@ -2,3 +2,4 @@
 2. search cue in specified dir if cutter's argument is dir
 3. write tags to the splitted files
 4. specify output file format including path
+5. add support of config file with default options
