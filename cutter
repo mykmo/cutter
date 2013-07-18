@@ -4,26 +4,13 @@ from os.path import basename, dirname
 from cue import read_cue
 
 from optparse import OptionParser, OptionGroup
-from subprocess import Popen as popen, PIPE
+from subprocess import Popen, PIPE
+from utils import to_unicode
 import mutagen
 import sys
 import os
 
 progname = basename(sys.argv[0])
-
-if sys.version_info.major == 2:
-	class Encoded:
-		def __init__(self, stream):
-			self.stream = stream
-
-		def write(self, msg):
-			self.stream.write(msg.encode("utf-8"))
-
-		def __getattr__(self, attr):
-			return getattr(self.stream, attr)
-
-	sys.stdout = Encoded(sys.stdout)
-	sys.stderr = Encoded(sys.stderr)
 
 def printf(fmt, *args):
 	sys.stdout.write(fmt % args)
@@ -39,6 +26,12 @@ def debug(fmt, *args):
 	if msg[-1] != "\n":
 		msg += "\n"
 	sys.stderr.write("-- " + msg)
+
+try:
+	import config
+except Exception as err:
+	printerr("import config failed: %s", err)
+	sys.exit(0)
 
 def quote(s):
 	return s if " " not in s else "\"%s\"" % s
@@ -114,7 +107,7 @@ def parse_args():
 		action='store',
 		type='string',
 		dest='dir',
-		default='.',
+		default=config.DIR,
 		help="output directory")
 
 	conversion.add_option(
@@ -122,7 +115,7 @@ def parse_args():
 		action="store",
 		type="int",
 		dest="compression",
-		default=8,
+		default=config.COMPRESSION,
 		help="compression factor for output format")
 
 	parser.add_option_group(conversion)
@@ -134,14 +127,14 @@ def parse_args():
 		action='store',
 		type='int',
 		dest='sample_rate',
-		default=44100,
+		default=config.SAMPLE_RATE,
 		metavar="RATE")
 
 	format.add_option(
 		"-c", "--channels",
 		action='store',
 		type='int',
-		default=2,
+		default=config.CHANNELS,
 		dest='channels')
 
 	format.add_option(
@@ -149,7 +142,7 @@ def parse_args():
 		action='store',
 		type='int',
 		dest='bits_per_sample',
-		default=16,
+		default=config.BITS_PER_SAMPLE,
 		metavar="BITS")
 
 	parser.add_option_group(format)
@@ -157,9 +150,11 @@ def parse_args():
 	return parser.parse_args()
 
 def verify_options(opt):
-	if opt.compression < 0 or opt.compression > 8:
+	if opt.compression is not None and opt.compression < 0 or opt.compression > 8:
 		printerr("invalid compression value %d, must be in range 0 .. 8", opt.compression)
 		sys.exit(1)
+
+	opt.dir = to_unicode(opt.dir)
 
 def cue_open_files(cue):
 	lst = []
@@ -185,12 +180,14 @@ def cue_open_files(cue):
 	return lst
 
 def build_decode_command(opt, info):
-	cmd = "flac sox - -C %d " % opt.compression
-	if opt.sample_rate != info.sample_rate:
+	cmd = "flac sox - "
+	if opt.compression is not None:
+		cmd += "-C %d " % opt.compression
+	if opt.sample_rate and opt.sample_rate != info.sample_rate:
 		cmd += "-r %d " % opt.sample_rate
-	if opt.bits_per_sample != info.bits_per_sample:
+	if opt.bits_per_sample and opt.bits_per_sample != info.bits_per_sample:
 		cmd += "-b %d " % opt.bits_per_sample
-	if opt.channels != info.channels:
+	if opt.channels and opt.channels != info.channels:
 		cmd += "-c %d " % opt.channels
 	return cmd + "%f"
 
@@ -212,7 +209,7 @@ def cue_split(cue, opt):
 		if opt.dry_run:
 			continue
 
-		proc = popen(args, stdin = PIPE)
+		proc = Popen(args, stdin = PIPE)
 		proc.stdin.write("\n".join(map(str, points)))
 		proc.stdin.close()
 
@@ -248,8 +245,9 @@ def main():
 		if not options.ignore:
 			raise StopIteration
 
+	cuefile = to_unicode(args[0])
 	try:
-		cue = read_cue(args[0].decode("utf-8"), on_error=on_error)
+		cue = read_cue(cuefile, on_error=on_error)
 	except StopIteration:
 		return 1
 	except IOError as err:
@@ -259,7 +257,7 @@ def main():
 		printerr("read_cue failed: %s: %s\n", err.__class__.__name__, err.filename)
 		return 1
 
-	cue.path = dirname(args[0]).decode("utf-8")
+	cue.path = dirname(cuefile)
 	if cue.path:
 		cue.path += "/"
 
