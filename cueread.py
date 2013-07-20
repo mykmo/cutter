@@ -47,7 +47,7 @@ for k, v in cue.attrs():
 	printf("\t%s = %s\n", k, quote(v))
 
 for file in cue.files():
-	printf("File %s %s\n", quote(repr(file)), file.type)
+	printf("File %s %s\n", quote(file.name), file.type)
 	for track in file.tracks():
 		printf("\tTrack %d\n", track.number)
 		pregap = track.get("pregap")

@@ -9,6 +9,9 @@ if sys.version_info.major == 2:
 			return buf
 		return buf.decode("utf-8")
 
+	def to_bytes(buf):
+		return buf
+
 	class Encoded:
 		def __init__(self, stream):
 			self.stream = stream
@@ -30,3 +33,8 @@ else:
 
 	def to_unicode(buf):
 		return buf
+
+	def to_bytes(buf):
+		if type(buf) is bytes:
+			return buf
+		return bytes(buf, "utf-8")

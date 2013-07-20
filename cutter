@@ -1,16 +1,15 @@
-#!/usr/bin/python2
+#!/usr/bin/python
 
-from os.path import basename, dirname
+from utils import to_unicode, to_bytes
 from cue import read_cue
 
 from optparse import OptionParser, OptionGroup
 from subprocess import Popen, PIPE
-from utils import to_unicode
-import mutagen
+from tempfile import mkdtemp
 import sys
 import os
 
-progname = basename(sys.argv[0])
+progname = os.path.basename(sys.argv[0])
 
 def printf(fmt, *args):
 	sys.stdout.write(fmt % args)
@@ -33,8 +32,8 @@ except Exception as err:
 	printerr("import config failed: %s", err)
 	sys.exit(0)
 
-def quote(s):
-	return s if " " not in s else "\"%s\"" % s
+def quote(s, ch = "\""):
+	return s if " " not in s else ch + s + ch
 
 def msf(ts):
 	m = ts / (60 * 75)
@@ -43,26 +42,52 @@ def msf(ts):
 
 	return "%d:%02d:%02d" % (m, s, f)
 
+class TempLink:
+	def __init__(self, path, name):
+		self.tmpdir = mkdtemp(prefix = "temp-")
+		self.linkpath = "%s/%s" % (self.tmpdir, name)
+
+		try:
+			os.symlink(path, self.tmpdir + "/" + name)
+		except Exception as err:
+			os.rmdir(self.tmpdir)
+			raise err
+
+	def remove(self):
+		os.unlink(self.linkpath)
+		os.rmdir(self.tmpdir)
+
+	def __repr__(self):
+		return "TempLink('%s')" % self.linkpath
+
+	def __str__(self):
+		return self.linkpath
+
+	def __enter__(self):
+		return self
+
+	def __exit__(self, *args):
+		self.remove()
+
 def print_cue(cue):
 	for k, v in cue.attrs():
 		printf("%s: %s\n", k.upper(), quote(v))
 
 	for file in cue.files(audio_only = True):
-		name = cue.path + file.name
+		name = cue.dir + file.name
 
 		printf("FILE %s", quote(file.name))
-		try:
-			fp = mutagen.File(name)
-		except IOError:
-			printf(": unable to open\n")
+		if not os.path.exists(name):
+			printf(": not exists\n")
 		else:
-			if fp is None:
+			info = StreamInfo.get(name)
+			if not info:
 				printf(": unknown type\n")
 			else:
 				printf(" (%d/%d, %d ch)\n",
-					fp.info.bits_per_sample,
-					fp.info.sample_rate,
-					fp.info.channels)
+					info.bits_per_sample,
+					info.sample_rate,
+					info.channels)
 
 		for track in file.tracks(audio_only = True):
 			printf("\tTRACK %02d", track.number)
@@ -154,32 +179,9 @@ def verify_options(opt):
 		printerr("invalid compression value %d, must be in range 0 .. 8", opt.compression)
 		sys.exit(1)
 
-	opt.dir = to_unicode(opt.dir)
+	opt.dir = u"." if not opt.dir else to_unicode(opt.dir)
 
-def cue_open_files(cue):
-	lst = []
-
-	for file in cue.files(True):
-		if not file.has_audio_tracks():
-			debug("skip file %s: no tracks", quote(file.name))
-			continue
-
-		name = cue.path + file.name
-		try:
-			fp = mutagen.File(name)
-		except IOError:
-			printerr("unable to open file %s", quote(file.name))
-			sys.exit(1)
-		else:
-			if fp is None:
-				printerr("%s: unknown type", quote(file.name))
-				sys.exit(1)
-
-		lst.append((file, name, fp.info))
-
-	return lst
-
-def build_decode_command(opt, info):
+def get_encoder_formart(opt, info):
 	cmd = "flac sox - "
 	if opt.compression is not None:
 		cmd += "-C %d " % opt.compression
@@ -191,46 +193,168 @@ def build_decode_command(opt, info):
 		cmd += "-c %d " % opt.channels
 	return cmd + "%f"
 
-def splitted_tracks(dir):
-	return sorted([f for f in os.listdir(dir) if f.startswith("split-track")])
+def filterdir(dir, prefix):
+	return sorted(filter(lambda f: f.startswith(prefix), os.listdir(dir)))
 
-def cue_split(cue, opt):
-	tracknumber = 0
-	for file, name, info in cue_open_files(cue):
-		points = list(file.split_points(info))
-		if not points:
-			debug("skip file %s: single track", quote(file.name))
-			continue
-
-		decode = build_decode_command(opt, info)
-		args = ["shnsplit", "-w", "-d", opt.dir, "-o", decode, name]
-		debug("run %s", " ".join(map(quote, args)))
-
-		if opt.dry_run:
-			continue
-
-		proc = Popen(args, stdin = PIPE)
-		proc.stdin.write("\n".join(map(str, points)))
-		proc.stdin.close()
-
-		ret = proc.wait()
-		if ret != 0:
-			printerr("shnsplit failed: exit code %d", ret)
+def mkdir(path):
+	if not os.path.exists(path):
+		try:
+			os.makedirs(path)
+		except OSError as err:
+			printerr("make dir %s failed: %s", quote(path), err)
 			sys.exit(1)
 
-		for track, fname in zip(file.tracks(True), splitted_tracks(opt.dir)):
-			tracknumber += 1
-			title = track.get("title") or "track"
-			newname = "%02d.%s.flac" % (tracknumber, title)
+class StreamInfo:
+	__mapping = {
+		b"Channels:": "channels",
+		b"Bits/sample:": "bits_per_sample",
+		b"Samples/sec:": "sample_rate"
+	}
 
-			printf("Rename [%s] --> [%s] : ", fname, newname)
+	@staticmethod
+	def get(name):
+		info = StreamInfo()
+		proc = Popen(["shninfo", name], stdout = PIPE)
+		for line in proc.stdout.readlines():
+			data = line.split()
+			attr = StreamInfo.__mapping.get(data[0])
+			if attr:
+				setattr(info, attr, int(data[1]))
+
+		if proc.wait():
+			return None
+
+		return info
+
+class CueSplitter:
+	EXT = ["ape", "flac", "wv"]
+
+	class File:
+		def __init__(self, fileobj, name, info):
+			self.fileobj = fileobj
+			self.name = name
+			self.info = info
+
+		def __getattr__(self, attr):
+			return getattr(self.fileobj, attr)
+
+	def __init__(self, cue, opt):
+		self.cue = cue
+		self.opt = opt
+		self.tracknumber = 0
+
+	def find_realfile(self, name):
+		if not name.endswith(".wav"):
+			return None
+
+		orig = name.rpartition(".")[0]
+		for file in filterdir(self.cue.dir or ".", orig):
+			head, _, ext = file.rpartition(".")
+			if head == orig and ext in self.EXT:
+				return file
+
+		return None
+
+	def open_files(self):
+		lst = []
+
+		for file in self.cue.files(True):
+			if not file.has_audio_tracks():
+				debug("skip file %s: no tracks", quote(file.name))
+				continue
+
+			name = self.cue.dir + file.name
+			if not os.path.exists(name):
+				real = self.find_realfile(file.name)
+				if not real:
+					printerr("no such file %s", quote(file.name))
+					sys.exit(1)
+				name = self.cue.dir + real
+
+			info = StreamInfo.get(name)
+			if info is None:
+				printerr("%s: unknown type", quote(file.name))
+				sys.exit(1)
+
+			lst.append(self.File(file, name, info))
+
+		return lst
+
+	def shntool_args(self, tool, info):
+		encode = get_encoder_formart(self.opt, info)
+		return [tool, "-w", "-d", self.opt.dir, "-o", encode]
+
+	def get_track_name(self, track):
+		self.tracknumber += 1
+		title = track.get("title") or "track"
+		return "%02d.%s.flac" % (self.tracknumber, title)
+
+	def copy_file(self, file):
+		return False
+
+	def convert_file(self, file):
+		track = list(file.tracks(True))[0]
+		trackname = self.get_track_name(track)
+
+		args = self.shntool_args("shnconv", file.info)
+
+		if self.opt.dry_run:
+			name = "link to " + quote(file.name, "'")
+			debug("run %s", " ".join(map(quote, args + [name])))
+			return
+
+		try:
+			link = TempLink(os.path.abspath(file.name), trackname)
+		except OSError as err:
+			printerr("create symlink %s failed: %s", quote(trackname), err)
+			sys.exit(1)
+
+		ret = Popen(args + [str(link)]).wait()
+		link.remove()
+
+		if ret:
+			printerr("shnconv failed: exit code %d", ret);
+			sys.exit(1)
+
+	def split_file(self, file, points):
+		args = self.shntool_args("shnsplit", file.info) + [file.name]
+
+		if self.opt.dry_run:
+			debug("run %s", " ".join(map(quote, args)))
+			return
+
+		proc = Popen(args, stdin = PIPE)
+		proc.stdin.write(to_bytes("\n".join(map(str, points))))
+		proc.stdin.close()
+
+		if proc.wait():
+			printerr("shnsplit failed: exit code %d", proc.returncode)
+			sys.exit(1)
+
+		splitted = filterdir(self.opt.dir, "split-track")
+		for track, filename in zip(file.tracks(True), splitted):
+			trackname = self.get_track_name(track)
+
+			printf("Rename [%s] --> [%s] : ", filename, trackname)
 			try:
-				os.rename(opt.dir + "/" + fname, opt.dir + "/" + newname)
+				os.rename(self.opt.dir + "/" + filename, self.opt.dir + "/" + trackname)
 			except OSError as err:
 				printf("FAILED: %s\n", err)
 				sys.exit(1)
 			else:
 				printf("OK\n")
+
+	def split(self):
+		if not self.opt.dry_run:
+			mkdir(self.opt.dir)
+
+		for file in self.open_files():
+			points = list(file.split_points(file.info))
+			if not points:
+				if not self.copy_file(file):
+					self.convert_file(file)
+			else:
+				self.split_file(file, points)
 
 def main():
 	options, args = parse_args()
@@ -245,9 +369,9 @@ def main():
 		if not options.ignore:
 			raise StopIteration
 
-	cuefile = to_unicode(args[0])
+	cuepath = to_unicode(args[0])
 	try:
-		cue = read_cue(cuefile, on_error=on_error)
+		cue = read_cue(cuepath, on_error=on_error)
 	except StopIteration:
 		return 1
 	except IOError as err:
@@ -257,14 +381,14 @@ def main():
 		printerr("read_cue failed: %s: %s\n", err.__class__.__name__, err.filename)
 		return 1
 
-	cue.path = dirname(cuefile)
-	if cue.path:
-		cue.path += "/"
+	cue.dir = os.path.dirname(cuepath)
+	if cue.dir:
+		cue.dir += "/"
 
 	if options.dump:
 		print_cue(cue)
 	else:
-		cue_split(cue, options)
+		CueSplitter(cue, options).split()
 
 	return 0
 
