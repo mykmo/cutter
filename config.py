@@ -1,10 +1,10 @@
 from utils import is_python_v2, to_unicode
 import os
 
-if is_python_v2():
-	import ConfigParser as configparser
-else:
+try:
 	import configparser
+except ImportError:
+	import ConfigParser as configparser
 
 ConfigParserClass = configparser.RawConfigParser
 
