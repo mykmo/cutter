@@ -6,6 +6,7 @@ from cue import read_cue
 from optparse import OptionParser, OptionGroup
 from subprocess import Popen, PIPE
 from tempfile import mkdtemp
+from shutil import copyfile
 import sys
 import os
 
@@ -84,7 +85,8 @@ def print_cue(cue):
 			if not info:
 				printf(": unknown type\n")
 			else:
-				printf(" (%d/%d, %d ch)\n",
+				printf(" [%s] (%d/%d, %d ch)\n",
+					info.type,
 					info.bits_per_sample,
 					info.sample_rate,
 					info.channels)
@@ -220,6 +222,8 @@ class StreamInfo:
 			attr = StreamInfo.__mapping.get(data[0])
 			if attr:
 				setattr(info, attr, int(data[1]))
+			elif line.startswith(b"Handled by:"):
+				info.type = to_unicode(data[2])
 
 		if proc.wait():
 			return None
@@ -290,7 +294,37 @@ class CueSplitter:
 		return "%02d.%s.flac" % (self.tracknumber, title)
 
 	def copy_file(self, file):
-		return False
+		noteq = lambda a, b: a and a !=b
+
+		if file.info.type != "flac":
+			return False
+		if noteq(self.opt.sample_rate, file.info.sample_rate):
+			return False
+		if noteq(self.opt.bits_per_sample, file.info.bits_per_sample):
+			return False
+		if noteq(self.opt.channels, file.info.channels):
+			return False
+
+		track = list(file.tracks(True))[0]
+		trackname = self.get_track_name(track)
+		dest = os.path.join(self.opt.dir, trackname)
+
+		if self.opt.dry_run:
+			printf("Copy [%s] --> [%s]\n", file.name, dest)
+			return True
+
+		printf("Copy [%s] --> [%s] : ", file.name, dest)
+		sys.stdout.flush()
+
+		try:
+			copyfile(file.name, dest)
+		except Exception as err:
+			printf("FAILED: %s\n", err)
+			sys.exit(1)
+		else:
+			printf("OK\n")
+
+		return True
 
 	def convert_file(self, file):
 		track = list(file.tracks(True))[0]

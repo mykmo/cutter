@@ -32,6 +32,8 @@ else:
 		return False
 
 	def to_unicode(buf):
+		if type(buf) is bytes:
+			return buf.decode("utf-8")
 		return buf
 
 	def to_bytes(buf):
