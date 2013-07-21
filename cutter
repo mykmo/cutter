@@ -107,72 +107,50 @@ def print_cue(cue):
 
 def parse_args():
 	parser = OptionParser(usage = u"Usage: %prog [options] cuefile")
-	parser.add_option(
-		"--ignore",
-		action="store_true",
-		default=False,
-		dest="ignore",
+	parser.add_option("--ignore",
+		action="store_true", default=False, dest="ignore",
 		help="ignore cue parsing errors")
 
-	parser.add_option(
-		"--dump",
-		action="store_true",
-		default=False,
-		dest="dump",
+	parser.add_option("--dump",
+		action="store_true", default=False, dest="dump",
 		help="print the content of cue file")
 
-	parser.add_option(
-		"-n", "--dry-run",
-		action="store_true",
-		default=False,
-		dest="dry_run")
+	parser.add_option("-n", "--dry-run",
+		action="store_true", default=False, dest="dry_run")
 
 	conversion = OptionGroup(parser, "Encoding options")
 
-	conversion.add_option(
-		'-d', '--dir',
-		action='store',
-		type='string',
-		dest='dir',
-		default=config.DIR,
-		help="output directory")
+	conversion.add_option("-d", "--dir",
+		dest="dir", default=config.DIR, help="output directory")
 
-	conversion.add_option(
-		"-C", "--compression",
-		action="store",
-		type="int",
-		dest="compression",
-		default=config.COMPRESSION,
+	conversion.add_option("-C", "--compression", type="int",
+		dest="compression", default=config.COMPRESSION,
 		help="compression factor for output format")
 
 	parser.add_option_group(conversion)
 
-	format = OptionGroup(parser, "Output Format")
+	format = OptionGroup(parser, "Output format")
 
-	format.add_option(
-		"-r", "--sample-rate",
-		action='store',
-		type='int',
-		dest='sample_rate',
-		default=config.SAMPLE_RATE,
-		metavar="RATE")
+	format.add_option("-r", "--sample-rate", type="int",
+		dest="sample_rate", default=config.SAMPLE_RATE, metavar="RATE")
 
-	format.add_option(
-		"-c", "--channels",
-		action='store',
-		type='int',
-		default=config.CHANNELS,
-		dest='channels')
+	format.add_option("-c", "--channels", type="int",
+		dest="channels", default=config.CHANNELS)
 
-	format.add_option(
-		"-b", "--bits-per-sample",
-		action='store',
-		type='int',
-		dest='bits_per_sample',
-		default=config.BITS_PER_SAMPLE,
-		metavar="BITS")
+	format.add_option("-b", "--bits-per-sample", type="int",
+		dest="bits_per_sample", default=config.BITS_PER_SAMPLE, metavar="BITS")
 
 	parser.add_option_group(format)
+
+	tag = OptionGroup(parser, "Tag options")
+
+	tag.add_option("--album", dest="album")
+	tag.add_option("--artist", dest="artist")
+	tag.add_option("--date", dest="date")
+	tag.add_option("--genre", dest="genre")
+	tag.add_option("--comment", dest="comment")
+
+	parser.add_option_group(tag)
 
 	return parser.parse_args()
 
@@ -246,6 +224,16 @@ class CueSplitter:
 		self.cue = cue
 		self.opt = opt
 		self.tracknumber = 0
+		self.tracktotal = sum(
+			[len(list(f.tracks(True))) for f in self.cue.files(True)]
+		)
+
+		self.tags = {
+			"album": self.opt.album or self.cue.get("title"),
+			"date": self.opt.date or self.cue.get("date"),
+			"genre": self.opt.genre or self.cue.get("genre"),
+			"comment": self.opt.comment or self.cue.get("comment")
+		}
 
 	def find_realfile(self, name):
 		if not name.endswith(".wav"):
@@ -293,8 +281,33 @@ class CueSplitter:
 		title = track.get("title") or "track"
 		return "%02d.%s.flac" % (self.tracknumber, title)
 
+	def tag(self, track, path):
+		self.tags.update({
+			"tracknumber": "%02d" % self.tracknumber,
+			"tracktotal": "%02d" % self.tracktotal,
+
+			"title": track.get("title"),
+			"artist": self.opt.artist or track.get("performer") or self.cue.get("performer"),
+		})
+
+		args = ["metaflac", "--remove-all-tags", "--import-tags-from=-", path]
+		printf("Tag [%s] : ", path)
+		sys.stdout.flush()
+
+		proc = Popen(args, stdin = PIPE)
+		for k, v in self.tags.items():
+			if v is not None and v != "":
+				proc.stdin.write(to_bytes("%s=%s\n" % (k.upper(), v)))
+		proc.stdin.close()
+
+		if proc.wait():
+			printf("FAILED\n")
+			sys.exit(1)
+
+		printf("OK\n")
+
 	def copy_file(self, file):
-		noteq = lambda a, b: a and a !=b
+		noteq = lambda a, b: a and a != b
 
 		if file.info.type != "flac":
 			return False
@@ -324,6 +337,8 @@ class CueSplitter:
 		else:
 			printf("OK\n")
 
+		self.tag(track, dest)
+
 		return True
 
 	def convert_file(self, file):
@@ -350,6 +365,8 @@ class CueSplitter:
 			printerr("shnconv failed: exit code %d", ret);
 			sys.exit(1)
 
+		self.tag(track, os.path.join(self.opt.dir, trackname))
+
 	def split_file(self, file, points):
 		args = self.shntool_args("shnsplit", file.info) + [file.name]
 
@@ -368,15 +385,18 @@ class CueSplitter:
 		splitted = filterdir(self.opt.dir, "split-track")
 		for track, filename in zip(file.tracks(True), splitted):
 			trackname = self.get_track_name(track)
+			dest = os.path.join(self.opt.dir, trackname)
 
 			printf("Rename [%s] --> [%s] : ", filename, trackname)
 			try:
-				os.rename(self.opt.dir + "/" + filename, self.opt.dir + "/" + trackname)
+				os.rename(os.path.join(self.opt.dir, filename), dest)
 			except OSError as err:
 				printf("FAILED: %s\n", err)
 				sys.exit(1)
 			else:
 				printf("OK\n")
+
+			self.tag(track, dest)
 
 	def split(self):
 		if not self.opt.dry_run:
