@@ -433,6 +433,7 @@ class CueSplitter:
 			for k, v in sorted(tags.items()):
 				if v is not "":
 					printf("%s=%s\n", k.upper(), v)
+
 	def dump_tracks(self):
 		for track in self.all_tracks():
 			trackname = self.get_track_name(track)

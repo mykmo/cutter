@@ -3,12 +3,6 @@ import codecs
 import sys
 import re
 
-def sort_iter(d):
-	def over(d):
-		for k in sorted(d.keys()):
-			yield k, d[k]
-	return iter(over(d))
-
 class Track:
 	def __init__(self, number, datatype):
 		try:
@@ -21,10 +15,10 @@ class Track:
 		self._attrs = {}
 
 	def attrs(self):
-		return sort_iter(self._attrs)
+		return sorted(self._attrs.items())
 
 	def indexes(self):
-		return sort_iter(self._indexes)
+		return sorted(self._indexes.items())
 
 	def get(self, attr):
 		return self._attrs.get(attr,
@@ -67,7 +61,7 @@ class Cue:
 		self._files = []
 
 	def attrs(self):
-		return sort_iter(self._attrs)
+		return sorted(self._attrs.items())
 
 	def files(self, filter_audio = True):
 		return filter(File.isaudio if filter_audio else None, self._files)
