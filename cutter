@@ -7,6 +7,7 @@ from optparse import OptionParser, OptionGroup
 from subprocess import Popen, PIPE
 from tempfile import mkdtemp
 from shutil import copyfile
+from itertools import chain
 import sys
 import os
 
@@ -74,7 +75,7 @@ def print_cue(cue):
 	for k, v in cue.attrs():
 		printf("%s: %s\n", k.upper(), quote(v))
 
-	for file in cue.files(audio_only = True):
+	for file in cue.files():
 		name = cue.dir + file.name
 
 		printf("FILE %s", quote(file.name))
@@ -91,7 +92,7 @@ def print_cue(cue):
 					info.sample_rate,
 					info.channels)
 
-		for track in file.tracks(audio_only = True):
+		for track in file.tracks():
 			printf("\tTRACK %02d", track.number)
 			title = track.get("title")
 			if title != "":
@@ -112,8 +113,9 @@ def parse_args():
 		help="ignore cue parsing errors")
 
 	parser.add_option("--dump",
-		action="store_true", default=False, dest="dump",
-		help="print the content of cue file")
+		dest="dump", choices=["cue", "tags", "tracks"],
+		metavar="cue|tags|tracks",
+		help="print the cue sheet, file tags or track names")
 
 	parser.add_option("-n", "--dry-run",
 		action="store_true", default=False, dest="dry_run")
@@ -143,12 +145,11 @@ def parse_args():
 	parser.add_option_group(format)
 
 	tag = OptionGroup(parser, "Tag options")
+	tag_options = ["album", "artist", "date", "genre",
+		"comment", "composer", "albumartist"]
 
-	tag.add_option("--album", dest="album")
-	tag.add_option("--artist", dest="artist")
-	tag.add_option("--date", dest="date")
-	tag.add_option("--genre", dest="genre")
-	tag.add_option("--comment", dest="comment")
+	for opt in tag_options:
+		tag.add_option("--" + opt, dest=opt, default="")
 
 	parser.add_option_group(tag)
 
@@ -224,15 +225,18 @@ class CueSplitter:
 		self.cue = cue
 		self.opt = opt
 		self.tracknumber = 0
-		self.tracktotal = sum(
-			[len(list(f.tracks(True))) for f in self.cue.files(True)]
-		)
+		self.tracktotal = len(list(self.all_tracks()))
 
 		self.tags = {
 			"album": self.opt.album or self.cue.get("title"),
 			"date": self.opt.date or self.cue.get("date"),
 			"genre": self.opt.genre or self.cue.get("genre"),
-			"comment": self.opt.comment or self.cue.get("comment")
+			"comment": self.opt.comment or self.cue.get("comment"),
+			"composer": self.opt.composer
+				or self.cue.get("songwriter"),
+			"artist": self.opt.albumartist or self.opt.artist
+				or self.cue.get("artist"),
+			"albumartist": self.opt.albumartist
 		}
 
 	def find_realfile(self, name):
@@ -250,7 +254,7 @@ class CueSplitter:
 	def open_files(self):
 		lst = []
 
-		for file in self.cue.files(True):
+		for file in self.cue.files():
 			if not file.has_audio_tracks():
 				debug("skip file %s: no tracks", quote(file.name))
 				continue
@@ -281,22 +285,28 @@ class CueSplitter:
 		title = track.get("title") or "track"
 		return "%02d.%s.flac" % (self.tracknumber, title)
 
-	def tag(self, track, path):
-		self.tags.update({
-			"tracknumber": "%02d" % self.tracknumber,
-			"tracktotal": "%02d" % self.tracktotal,
+	def get_track_tags(self, track):
+		tags = dict(self.tags)
+		tags.update({
+			"tracknumber": self.tracknumber,
+			"tracktotal": self.tracktotal,
 
 			"title": track.get("title"),
 			"artist": self.opt.artist or track.get("performer") or self.cue.get("performer"),
+			"composer": self.opt.composer or track.get("songwriter")
 		})
 
+		return tags
+
+	def tag(self, track, path):
+		tags = self.get_track_tags(track)
 		args = ["metaflac", "--remove-all-tags", "--import-tags-from=-", path]
 		printf("Tag [%s] : ", path)
 		sys.stdout.flush()
 
 		proc = Popen(args, stdin = PIPE)
-		for k, v in self.tags.items():
-			if v is not None and v != "":
+		for k, v in tags.items():
+			if v is not "":
 				proc.stdin.write(to_bytes("%s=%s\n" % (k.upper(), v)))
 		proc.stdin.close()
 
@@ -318,7 +328,7 @@ class CueSplitter:
 		if noteq(self.opt.channels, file.info.channels):
 			return False
 
-		track = list(file.tracks(True))[0]
+		track = list(file.tracks())[0]
 		trackname = self.get_track_name(track)
 		dest = os.path.join(self.opt.dir, trackname)
 
@@ -383,7 +393,7 @@ class CueSplitter:
 			sys.exit(1)
 
 		splitted = filterdir(self.opt.dir, "split-track")
-		for track, filename in zip(file.tracks(True), splitted):
+		for track, filename in zip(file.tracks(), splitted):
 			trackname = self.get_track_name(track)
 			dest = os.path.join(self.opt.dir, trackname)
 
@@ -409,6 +419,24 @@ class CueSplitter:
 					self.convert_file(file)
 			else:
 				self.split_file(file, points)
+
+	def all_tracks(self):
+		return chain(*[f.tracks() for f in self.cue.files()])
+
+	def dump_tags(self):
+		for track in self.all_tracks():
+			if self.tracknumber:
+				printf("\n")
+
+			self.tracknumber += 1
+			tags = self.get_track_tags(track)
+			for k, v in sorted(tags.items()):
+				if v is not "":
+					printf("%s=%s\n", k.upper(), v)
+	def dump_tracks(self):
+		for track in self.all_tracks():
+			trackname = self.get_track_name(track)
+			printf("%s\n", os.path.join(self.opt.dir, trackname))
 
 def main():
 	options, args = parse_args()
@@ -439,10 +467,12 @@ def main():
 	if cue.dir:
 		cue.dir += "/"
 
-	if options.dump:
-		print_cue(cue)
-	else:
-		CueSplitter(cue, options).split()
+	{
+		"cue":		lambda: print_cue(cue),
+		"tags":		lambda: CueSplitter(cue, options).dump_tags(),
+		"tracks":	lambda: CueSplitter(cue, options).dump_tracks(),
+		None:		lambda: CueSplitter(cue, options).split()
+	}[options.dump]()
 
 	return 0
 

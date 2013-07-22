@@ -13,7 +13,7 @@ if sys.version_info.major == 2:
 
 		def __getattr__(self, attr):
 			return getattr(self.stream, attr)
-	
+
 	sys.stdout = Encoded(sys.stdout)
 
 def printf(fmt, *args):
@@ -46,9 +46,9 @@ printf("Cue attributes:\n")
 for k, v in cue.attrs():
 	printf("\t%s = %s\n", k, quote(v))
 
-for file in cue.files():
+for file in cue.files(filter_audio=False):
 	printf("File %s %s\n", quote(file.name), file.type)
-	for track in file.tracks():
+	for track in file.tracks(filter_audio=False):
 		printf("\tTrack %d\n", track.number)
 		pregap = track.get("pregap")
 		postgap = track.get("postgap")
