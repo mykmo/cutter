@@ -38,6 +38,8 @@ class CfgParser:
 	def __getattr__(self, attr):
 		return getattr(self.parser, attr)
 
+DEFAULT_FILENAME_FORMAT = "{tracknumber:02d}.{title}"
+
 cfg = CfgParser()
 cfg.read(os.path.expanduser("~/.cutter.cfg"))
 
@@ -47,3 +49,5 @@ COMPRESSION = cfg.getint("encoding", "compression")
 SAMPLE_RATE = cfg.getint("output", "sample_rate")
 CHANNELS = cfg.getint("output", "channels")
 BITS_PER_SAMPLE = cfg.getint("output", "bits_per_sample")
+
+FILENAME_FORMAT = cfg.get("encoding", "format", DEFAULT_FILENAME_FORMAT)

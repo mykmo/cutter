@@ -8,6 +8,8 @@ from subprocess import Popen, PIPE
 from tempfile import mkdtemp
 from shutil import copyfile
 from itertools import chain
+
+import collections
 import sys
 import os
 
@@ -120,16 +122,20 @@ def parse_args():
 	parser.add_option("-n", "--dry-run",
 		action="store_true", default=False, dest="dry_run")
 
-	conversion = OptionGroup(parser, "Encoding options")
+	enc = OptionGroup(parser, "Encoding options")
 
-	conversion.add_option("-d", "--dir",
+	enc.add_option("--format",
+		dest="fmt", default=config.FILENAME_FORMAT,
+		help="the format string for new filenames")
+
+	enc.add_option("-d", "--dir",
 		dest="dir", default=config.DIR, help="output directory")
 
-	conversion.add_option("-C", "--compression", type="int",
+	enc.add_option("-C", "--compression", type="int",
 		dest="compression", default=config.COMPRESSION,
 		help="compression factor for output format")
 
-	parser.add_option_group(conversion)
+	parser.add_option_group(enc)
 
 	format = OptionGroup(parser, "Output format")
 
@@ -161,6 +167,11 @@ def verify_options(opt):
 		sys.exit(1)
 
 	opt.dir = u"." if not opt.dir else to_unicode(opt.dir)
+	opt.fmt = to_unicode(opt.fmt)
+
+	if not os.path.basename(opt.fmt):
+		printerr("invalid format option \"%s\"", opt.fmt)
+		sys.exit(1)
 
 def get_encoder_formart(opt, info):
 	cmd = "flac sox - "
@@ -211,6 +222,7 @@ class StreamInfo:
 
 class CueSplitter:
 	EXT = ["ape", "flac", "wv"]
+	TRACK_SUFFIX = "flac"
 
 	class File:
 		def __init__(self, fileobj, name, info):
@@ -221,10 +233,14 @@ class CueSplitter:
 		def __getattr__(self, attr):
 			return getattr(self.fileobj, attr)
 
+	class TrackInfo:
+		def __init__(self, name, tags):
+			self.name = name
+			self.tags = tags
+
 	def __init__(self, cue, opt):
 		self.cue = cue
 		self.opt = opt
-		self.tracknumber = 0
 		self.tracktotal = len(list(self.all_tracks()))
 
 		self.tags = {
@@ -235,9 +251,46 @@ class CueSplitter:
 			"composer": self.opt.composer
 				or self.cue.get("songwriter"),
 			"artist": self.opt.albumartist or self.opt.artist
-				or self.cue.get("artist"),
+				or self.cue.get("performer"),
 			"albumartist": self.opt.albumartist
 		}
+
+		try:
+			tmp = os.path.dirname(opt.fmt).format(**self.tags)
+		except KeyError as err:
+			printerr("invalid format key: %s", err)
+			sys.exit(1)
+
+		self.dest = os.path.join(opt.dir, tmp)
+		track_fmt = os.path.basename(opt.fmt)
+
+		tracknumber = 0
+		self.track_info = {}
+		for track in self.all_tracks():
+			tracknumber += 1
+			self.track_info[track] = self.get_track_info(
+				track, tracknumber, track_fmt
+			)
+
+	def get_track_info(self, track, tracknumber, fmt):
+		tags = dict(self.tags)
+		tags.update({
+			"tracknumber": tracknumber,
+			"tracktotal": self.tracktotal,
+
+			"title": track.get("title") or "track",
+			"artist": self.opt.artist or track.get("performer")
+				or self.cue.get("performer"),
+			"composer": self.opt.composer or track.get("songwriter")
+		})
+
+		try:
+			name = fmt.format(**tags) + "." + self.TRACK_SUFFIX
+		except KeyError as err:
+			printerr("invalid format key: %s", err)
+			sys.exit(1)
+
+		return self.TrackInfo(name, tags)
 
 	def find_realfile(self, name):
 		if not name.endswith(".wav"):
@@ -278,28 +331,16 @@ class CueSplitter:
 
 	def shntool_args(self, tool, info):
 		encode = get_encoder_formart(self.opt, info)
-		return [tool, "-w", "-d", self.opt.dir, "-o", encode]
+		return [tool, "-w", "-d", self.dest, "-o", encode]
 
-	def get_track_name(self, track):
-		self.tracknumber += 1
-		title = track.get("title") or "track"
-		return "%02d.%s.flac" % (self.tracknumber, title)
+	def track_name(self, track):
+		return self.track_info[track].name
 
-	def get_track_tags(self, track):
-		tags = dict(self.tags)
-		tags.update({
-			"tracknumber": self.tracknumber,
-			"tracktotal": self.tracktotal,
-
-			"title": track.get("title"),
-			"artist": self.opt.artist or track.get("performer") or self.cue.get("performer"),
-			"composer": self.opt.composer or track.get("songwriter")
-		})
-
-		return tags
+	def track_tags(self, track):
+		return self.track_info[track].tags
 
 	def tag(self, track, path):
-		tags = self.get_track_tags(track)
+		tags = self.track_tags(track)
 		args = ["metaflac", "--remove-all-tags", "--import-tags-from=-", path]
 		printf("Tag [%s] : ", path)
 		sys.stdout.flush()
@@ -329,31 +370,31 @@ class CueSplitter:
 			return False
 
 		track = list(file.tracks())[0]
-		trackname = self.get_track_name(track)
-		dest = os.path.join(self.opt.dir, trackname)
+		trackname = self.track_name(track)
+		path = os.path.join(self.dest, trackname)
 
 		if self.opt.dry_run:
-			printf("Copy [%s] --> [%s]\n", file.name, dest)
+			printf("Copy [%s] --> [%s]\n", file.name, path)
 			return True
 
-		printf("Copy [%s] --> [%s] : ", file.name, dest)
+		printf("Copy [%s] --> [%s] : ", file.name, path)
 		sys.stdout.flush()
 
 		try:
-			copyfile(file.name, dest)
+			copyfile(file.name, path)
 		except Exception as err:
 			printf("FAILED: %s\n", err)
 			sys.exit(1)
 		else:
 			printf("OK\n")
 
-		self.tag(track, dest)
+		self.tag(track, path)
 
 		return True
 
 	def convert_file(self, file):
-		track = list(file.tracks(True))[0]
-		trackname = self.get_track_name(track)
+		track = list(file.tracks())[0]
+		trackname = self.track_name(track)
 
 		args = self.shntool_args("shnconv", file.info)
 
@@ -375,7 +416,7 @@ class CueSplitter:
 			printerr("shnconv failed: exit code %d", ret);
 			sys.exit(1)
 
-		self.tag(track, os.path.join(self.opt.dir, trackname))
+		self.tag(track, os.path.join(self.dest, trackname))
 
 	def split_file(self, file, points):
 		args = self.shntool_args("shnsplit", file.info) + [file.name]
@@ -392,27 +433,38 @@ class CueSplitter:
 			printerr("shnsplit failed: exit code %d", proc.returncode)
 			sys.exit(1)
 
-		splitted = filterdir(self.opt.dir, "split-track")
+		splitted = filterdir(self.dest, "split-track")
 		for track, filename in zip(file.tracks(), splitted):
-			trackname = self.get_track_name(track)
-			dest = os.path.join(self.opt.dir, trackname)
+			trackname = self.track_name(track)
+			path = os.path.join(self.dest, trackname)
 
 			printf("Rename [%s] --> [%s] : ", filename, trackname)
 			try:
-				os.rename(os.path.join(self.opt.dir, filename), dest)
+				os.rename(os.path.join(self.dest, filename), path)
 			except OSError as err:
 				printf("FAILED: %s\n", err)
 				sys.exit(1)
 			else:
 				printf("OK\n")
 
-			self.tag(track, dest)
+			self.tag(track, path)
+
+	def check_duplicates(self):
+		names = [x.name for x in self.track_info.values()]
+		dup = [k for k, v in collections.Counter(names).items() if v > 1]
+		if dup:
+			printerr("track names are duplicated: %s", " ".join(dup))
+			sys.exit(1)
 
 	def split(self):
-		if not self.opt.dry_run:
-			mkdir(self.opt.dir)
+		self.check_duplicates()
 
-		for file in self.open_files():
+		files = self.open_files()
+
+		if not self.opt.dry_run:
+			mkdir(self.dest)
+
+		for file in files:
 			points = list(file.split_points(file.info))
 			if not points:
 				if not self.copy_file(file):
@@ -424,20 +476,21 @@ class CueSplitter:
 		return chain(*[f.tracks() for f in self.cue.files()])
 
 	def dump_tags(self):
+		add_line = False
 		for track in self.all_tracks():
-			if self.tracknumber:
+			if add_line:
 				printf("\n")
+			add_line = True
 
-			self.tracknumber += 1
-			tags = self.get_track_tags(track)
+			tags = self.track_tags(track)
 			for k, v in sorted(tags.items()):
 				if v is not "":
 					printf("%s=%s\n", k.upper(), v)
 
 	def dump_tracks(self):
 		for track in self.all_tracks():
-			trackname = self.get_track_name(track)
-			printf("%s\n", os.path.join(self.opt.dir, trackname))
+			trackname = self.track_name(track)
+			printf("%s\n", os.path.join(self.dest, trackname))
 
 def main():
 	options, args = parse_args()
