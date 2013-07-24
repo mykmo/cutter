@@ -138,6 +138,14 @@ def parse_args():
 	enc.add_option("-d", "--dir",
 		dest="dir", default=config.DIR, help="output directory")
 
+	enc.add_option("--use-tempdir",
+		dest="use_tempdir", action="store_true",
+		help="use temporary directory for files")
+
+	enc.add_option("--no-tempdir",
+		dest="use_tempdir", action="store_false",
+		help="do not use temporary directory")
+
 	enc.add_option("-C", "--compression", type="int",
 		dest="compression", default=config.COMPRESSION,
 		help="compression factor for output format")
@@ -157,14 +165,6 @@ def parse_args():
 	fname.add_option("--no-convert-chars",
 		dest="convert_chars", action="store_false",
 		help="do not replace characters in filename")
-
-	fname.add_option("--use-tempdir",
-		dest="use_tempdir", action="store_true",
-		help="use temporary directory for files")
-
-	fname.add_option("--no-tempdir",
-		dest="use_tempdir", action="store_false",
-		help="do not use temporary directory")
 
 	parser.add_option_group(fname)
 
@@ -521,7 +521,7 @@ class CueSplitter:
 			sys.exit(1)
 
 	def transfer_files(self, source, dest):
-		for file in os.listdir(source):
+		for file in sorted(os.listdir(source)):
 			path = os.path.join(source, file)
 			if not os.path.isfile(path):
 				debug("skip non file %s", quote(file))
