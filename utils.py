@@ -10,6 +10,8 @@ if sys.version_info.major == 2:
 		return buf.decode("utf-8")
 
 	def to_bytes(buf):
+		if type(buf) is unicode:
+			return buf.encode("utf-8")
 		return buf
 
 	class Encoded:

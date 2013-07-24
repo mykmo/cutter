@@ -6,10 +6,10 @@ from cue import read_cue
 from optparse import OptionParser, OptionGroup
 from subprocess import Popen, PIPE
 from tempfile import mkdtemp
-from shutil import copyfile
 from itertools import chain
 
 import collections
+import shutil
 import sys
 import os
 
@@ -158,6 +158,14 @@ def parse_args():
 		dest="convert_chars", action="store_false",
 		help="do not replace characters in filename")
 
+	fname.add_option("--use-tempdir",
+		dest="use_tempdir", action="store_true",
+		help="use temporary directory for files")
+
+	fname.add_option("--no-tempdir",
+		dest="use_tempdir", action="store_false",
+		help="do not use temporary directory")
+
 	parser.add_option_group(fname)
 
 	format = OptionGroup(parser, "Output format")
@@ -205,6 +213,8 @@ def process_options(opt):
 
 	if opt.convert_chars is None:
 		opt.convert_chars = config.CONVERT_CHARS
+	if opt.use_tempdir is None:
+		opt.use_tempdir = config.USE_TEMPDIR
 
 def get_encoder_formart(opt, info):
 	cmd = "flac sox - "
@@ -435,7 +445,7 @@ class CueSplitter:
 		sys.stdout.flush()
 
 		try:
-			copyfile(file.name, path)
+			shutil.copyfile(file.name, path)
 		except Exception as err:
 			printf("FAILED: %s\n", err)
 			sys.exit(1)
@@ -510,13 +520,36 @@ class CueSplitter:
 			printerr("track names are duplicated: %s", " ".join(dup))
 			sys.exit(1)
 
+	def transfer_files(self, source, dest):
+		for file in os.listdir(source):
+			path = os.path.join(source, file)
+			if not os.path.isfile(path):
+				debug("skip non file %s", quote(file))
+				continue
+
+			printf("Copy [%s] into [%s] : ", file, dest)
+			sys.stdout.flush()
+
+			try:
+				shutil.copy(path, dest)
+			except Exception as err:
+				printf("FAILED: %s\n", err)
+				sys.exit(1)
+			else:
+				printf("OK\n")
+
 	def split(self):
 		self.check_duplicates()
 
 		files = self.open_files()
 
+		self.realpath = None
 		if not self.opt.dry_run:
 			mkdir(self.dest)
+			if self.opt.use_tempdir:
+				self.realpath = self.dest
+				tempdir = mkdtemp(prefix="cutter-")
+				self.dest = to_unicode(tempdir)
 
 		for file in files:
 			points = list(file.split_points(file.info))
@@ -525,6 +558,14 @@ class CueSplitter:
 					self.convert_file(file)
 			else:
 				self.split_file(file, points)
+
+		if self.realpath:
+			self.transfer_files(self.dest, self.realpath)
+			try:
+				shutil.rmtree(self.dest)
+			except Exception as err:
+				printerr("rm %s failed: %s\n", self.dest, err)
+				sys.exit(1)
 
 	def all_tracks(self):
 		return chain(*[f.tracks() for f in self.cue.files()])
