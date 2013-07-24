@@ -4,4 +4,4 @@ OK 3. write tags to the splitted files
 OK 4. specify output file format including path
 OK 5. add support of config file with default options
 OK 6. copy file instead of convert if possible
-7. substitute odd symbols in track names
+OK 7. substitute odd symbols in track names

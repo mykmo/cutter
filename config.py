@@ -50,4 +50,5 @@ SAMPLE_RATE = cfg.getint("output", "sample_rate")
 CHANNELS = cfg.getint("output", "channels")
 BITS_PER_SAMPLE = cfg.getint("output", "bits_per_sample")
 
-FILENAME_FORMAT = cfg.get("encoding", "format", DEFAULT_FILENAME_FORMAT)
+FILENAME_FORMAT = cfg.get("filename", "format", DEFAULT_FILENAME_FORMAT)
+CONVERT_CHARS = cfg.getbool("filename", "convert_chars", False)
