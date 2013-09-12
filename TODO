@@ -1,8 +1,8 @@
 OK 1. convert file with a single track
-2. search cue in specified dir if cutter's argument is dir
+OK 2. search cue in specified dir if cutter's argument is dir
 OK 3. write tags to the splitted files
 OK 4. specify output file format including path
 OK 5. add support of config file with default options
 OK 6. copy file instead of convert if possible
 OK 7. substitute odd symbols in track names
-8. add charset coding argument
+OK 8. add charset coding argument

@@ -135,6 +135,9 @@ def parse_args():
 
 	enc = OptionGroup(parser, "Encoding options")
 
+	enc.add_option("--coding", dest="coding",
+		help="encoding of original text")
+
 	enc.add_option("-d", "--dir",
 		dest="dir", default=config.DIR, help="output directory")
 
@@ -616,14 +619,20 @@ def main():
 			debug("use cue file %s", quote(cuepath))
 
 	try:
-		cue = read_cue(cuepath, on_error=on_error)
+		cue = read_cue(cuepath, options.coding, on_error=on_error)
 	except StopIteration:
 		return 1
 	except IOError as err:
 		printerr("open %s: %s", err.filename, err.strerror)
 		return 1
 	except Exception as err:
-		printerr("read_cue failed: %s: %s\n", err.__class__.__name__, err.filename)
+		msg = "%s (%s)" % (err, err.__class__.__name__)
+
+		if hasattr(err, "filename"):
+			printerr("%s: %s: %s\n", err.filename, msg)
+		else:
+			printerr("%s\n", msg)
+
 		return 1
 
 	cue.dir = os.path.dirname(cuepath)

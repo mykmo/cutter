@@ -291,10 +291,13 @@ class CueParser:
 
 				previous = track
 
-def __read_file(filename):
+def __read_file(filename, coding = None):
 	f = open(filename, "rb")
 	data = f.read()
 	f.close()
+
+	if coding:
+		return data.decode(coding)
 
 	encoded = None
 	try:
@@ -311,10 +314,12 @@ def __read_file(filename):
 			encoded = data.decode(encoding)
 		except UnicodeDecodeError:
 			raise Exception("autodetect failed: invalid encoding %s" % encoding)
+		except Exception as exc:
+			raise Exception("decoding failed: %s" % exc)
 
 	return encoded
 
-def read_cue(filename, on_error = None):
+def read_cue(filename, coding = None, on_error = None):
 	if on_error:
 		def msg(fmt, *args):
 			err = CueParserError(fmt % args)
@@ -323,7 +328,7 @@ def read_cue(filename, on_error = None):
 	else:
 		msg = lambda *args: None
 
-	cuefile = __read_file(filename)
+	cuefile = __read_file(filename, coding)
 	parser = CueParser()
 
 	nline = 0
