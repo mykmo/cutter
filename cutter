@@ -185,11 +185,14 @@ def parse_args():
 	parser.add_option_group(format)
 
 	tag = OptionGroup(parser, "Tag options")
-	tag_options = ["album", "artist", "date", "genre",
+	tag_options = ["album", "artist", ("date", "year"), "genre",
 		"comment", "composer", "albumartist"]
 
 	for opt in tag_options:
-		tag.add_option("--" + opt, dest=opt, default="")
+		if type(opt) in (list, tuple):
+			tag.add_option(*["--" + s for s in opt], dest=opt[0], default="")
+		else:
+			tag.add_option("--" + opt, dest=opt, default="")
 
 	parser.add_option_group(tag)
 
