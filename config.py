@@ -44,8 +44,10 @@ cfg = CfgParser()
 cfg.read(os.path.expanduser("~/.cutter.cfg"))
 
 DIR = cfg.get("encoding", "dir", ".")
+TYPE = cfg.get("encoding", "type")
 USE_TEMPDIR = cfg.getbool("encoding", "use_tempdir")
 COMPRESSION = cfg.getint("encoding", "compression")
+BITRATE = cfg.getint("encoding", "bitrate")
 
 SAMPLE_RATE = cfg.getint("output", "sample_rate")
 CHANNELS = cfg.getint("output", "channels")

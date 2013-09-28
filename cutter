@@ -3,12 +3,14 @@
 from utils import to_unicode, to_bytes
 from cue import read_cue
 
+import formats
+
 from optparse import OptionParser, OptionGroup
-from subprocess import Popen, PIPE
 from tempfile import mkdtemp
 from itertools import chain
 
 import collections
+import subprocess
 import shutil
 import sys
 import os
@@ -27,7 +29,11 @@ ILLEGAL_CHARACTERS_MAP = {
 progname = os.path.basename(sys.argv[0])
 
 def printf(fmt, *args):
-	sys.stdout.write(fmt % args)
+	out = fmt % args
+	sys.stdout.write(out)
+
+	if out[-1] != '\n':
+		sys.stdout.flush()
 
 def printerr(fmt, *args):
 	msg = fmt % args
@@ -135,6 +141,10 @@ def parse_args():
 
 	enc = OptionGroup(parser, "Encoding options")
 
+	enc.add_option("-t", "--type", dest="type",
+		choices = formats.supported(),
+		help="output file format")
+
 	enc.add_option("--coding", dest="coding",
 		help="encoding of original text")
 
@@ -151,7 +161,12 @@ def parse_args():
 
 	enc.add_option("-C", "--compression", type="int",
 		dest="compression", default=config.COMPRESSION,
-		help="compression factor for output format")
+		metavar="FACTOR",
+		help="compression factor for output format (used for flac)")
+
+	enc.add_option("--bitrate", type="int",
+		dest="bitrate", default=config.BITRATE,
+		help="audio bitrate (used for mp3)")
 
 	parser.add_option_group(enc)
 
@@ -199,9 +214,24 @@ def parse_args():
 	return parser.parse_args()
 
 def process_options(opt):
-	if opt.compression is not None and opt.compression < 0 or opt.compression > 8:
+	if opt.compression is not None and (opt.compression < 0 or opt.compression > 8):
 		printerr("invalid compression value %d, must be in range 0 .. 8", opt.compression)
-		sys.exit(1)
+		return False
+
+	if opt.bitrate is not None and (opt.bitrate < 32 or opt.bitrate > 320):
+		printerr("invalid bitrate value %d, must be in range 32 .. 320", opt.bitrate)
+		return False
+
+	if opt.type is None and config.TYPE:
+		if not formats.issupported(config.TYPE):
+			printerr("invalid configuration: type '%s' is not supported", config.TYPE)
+			return False
+
+		opt.type = config.TYPE
+
+	if not opt.dump and opt.type is None:
+		printerr("--type option is missed")
+		return False
 
 	if not opt.dir:
 		opt.dir = u"."
@@ -211,7 +241,7 @@ def process_options(opt):
 	opt.fmt = to_unicode(opt.fmt)
 	if not os.path.basename(opt.fmt):
 		printerr("invalid format option \"%s\"", opt.fmt)
-		sys.exit(1)
+		return False
 	else:
 		opt.fmt = os.path.normpath(opt.fmt)
 		if opt.fmt.startswith("/"):
@@ -222,17 +252,7 @@ def process_options(opt):
 	if opt.use_tempdir is None:
 		opt.use_tempdir = config.USE_TEMPDIR
 
-def get_encoder_formart(opt, info):
-	cmd = "flac sox - "
-	if opt.compression is not None:
-		cmd += "-C %d " % opt.compression
-	if opt.sample_rate and opt.sample_rate != info.sample_rate:
-		cmd += "-r %d " % opt.sample_rate
-	if opt.bits_per_sample and opt.bits_per_sample != info.bits_per_sample:
-		cmd += "-b %d " % opt.bits_per_sample
-	if opt.channels and opt.channels != info.channels:
-		cmd += "-c %d " % opt.channels
-	return cmd + "%f"
+	return True
 
 def filterdir(dir, prefix):
 	return sorted(filter(lambda f: f.startswith(prefix), os.listdir(dir)))
@@ -258,7 +278,7 @@ class StreamInfo:
 	@staticmethod
 	def get(name):
 		info = StreamInfo()
-		proc = Popen(["shninfo", name], stdout = PIPE)
+		proc = subprocess.Popen(["shninfo", name], stdout = subprocess.PIPE)
 		for line in proc.stdout.readlines():
 			data = line.split()
 			attr = StreamInfo.__mapping.get(data[0])
@@ -274,7 +294,6 @@ class StreamInfo:
 
 class CueSplitter:
 	EXT = ["ape", "flac", "wv"]
-	TRACK_SUFFIX = "flac"
 
 	class File:
 		def __init__(self, fileobj, name, info):
@@ -313,6 +332,8 @@ class CueSplitter:
 		self.cue = cue
 		self.opt = opt
 		self.tracktotal = len(list(self.all_tracks()))
+
+		self.enctype = formats.handler(opt.type, logger=printf)
 
 		self.tags = {
 			"album": self.opt.album or self.cue.get("title"),
@@ -360,7 +381,7 @@ class CueSplitter:
 		if self.opt.convert_chars:
 			name = convert_characters(name)
 
-		return self.TrackInfo(name + "." + self.TRACK_SUFFIX, tags)
+		return self.TrackInfo(name + "." + self.enctype.ext, tags)
 
 	def find_realfile(self, name):
 		if not name.endswith(".wav"):
@@ -400,7 +421,7 @@ class CueSplitter:
 		return lst
 
 	def shntool_args(self, tool, info):
-		encode = get_encoder_formart(self.opt, info)
+		encode = self.enctype.encode(self.opt, info)
 		return [tool, "-w", "-d", self.dest, "-o", encode]
 
 	def track_name(self, track):
@@ -410,27 +431,13 @@ class CueSplitter:
 		return self.track_info[track].tags
 
 	def tag(self, track, path):
-		tags = self.track_tags(track)
-		args = ["metaflac", "--remove-all-tags", "--import-tags-from=-", path]
-		printf("Tag [%s] : ", path)
-		sys.stdout.flush()
-
-		proc = Popen(args, stdin = PIPE)
-		for k, v in tags.items():
-			if v is not "":
-				proc.stdin.write(to_bytes("%s=%s\n" % (k.upper(), v)))
-		proc.stdin.close()
-
-		if proc.wait():
-			printf("FAILED\n")
+		if not self.enctype.tag(path, self.track_tags(track)):
 			sys.exit(1)
-
-		printf("OK\n")
 
 	def copy_file(self, file):
 		noteq = lambda a, b: a and a != b
 
-		if file.info.type != "flac":
+		if file.info.type != self.encode.name:
 			return False
 		if noteq(self.opt.sample_rate, file.info.sample_rate):
 			return False
@@ -448,7 +455,6 @@ class CueSplitter:
 			return True
 
 		printf("Copy [%s] --> [%s] : ", file.name, path)
-		sys.stdout.flush()
 
 		try:
 			shutil.copyfile(file.name, path)
@@ -479,7 +485,7 @@ class CueSplitter:
 			printerr("create symlink %s failed: %s", quote(trackname), err)
 			sys.exit(1)
 
-		ret = Popen(args + [str(link)]).wait()
+		ret = subprocess.call(args + [str(link)])
 		link.remove()
 
 		if ret:
@@ -495,7 +501,7 @@ class CueSplitter:
 			debug("run %s", " ".join(map(quote, args)))
 			return
 
-		proc = Popen(args, stdin = PIPE)
+		proc = subprocess.Popen(args, stdin = subprocess.PIPE)
 		proc.stdin.write(to_bytes("\n".join(map(str, points))))
 		proc.stdin.close()
 
@@ -534,7 +540,6 @@ class CueSplitter:
 				continue
 
 			printf("Copy [%s] into [%s] : ", file, dest)
-			sys.stdout.flush()
 
 			try:
 				shutil.copy(path, dest)
@@ -604,7 +609,8 @@ def find_cuefile(path):
 
 def main():
 	options, args = parse_args()
-	process_options(options)
+	if not process_options(options):
+		sys.exit(1)
 
 	if len(args) != 1:
 		printf("Usage: %s [options] cuefile\n", progname)
