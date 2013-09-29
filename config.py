@@ -43,15 +43,18 @@ DEFAULT_FILENAME_FORMAT = "{tracknumber:02d}.{title}"
 cfg = CfgParser()
 cfg.read(os.path.expanduser("~/.cutter.cfg"))
 
-DIR = cfg.get("encoding", "dir", ".")
-TYPE = cfg.get("encoding", "type")
-USE_TEMPDIR = cfg.getbool("encoding", "use_tempdir")
-COMPRESSION = cfg.getint("encoding", "compression")
-BITRATE = cfg.getint("encoding", "bitrate")
+DIR			= cfg.get("encoding", "dir", ".")
+TYPE			= cfg.get("encoding", "type")
+USE_TEMPDIR		= cfg.getbool("encoding", "use_tempdir")
+COMPRESSION		= cfg.getint("encoding", "compression")
 
-SAMPLE_RATE = cfg.getint("output", "sample_rate")
-CHANNELS = cfg.getint("output", "channels")
-BITS_PER_SAMPLE = cfg.getint("output", "bits_per_sample")
+SAMPLE_RATE		= cfg.getint("output", "sample_rate")
+CHANNELS		= cfg.getint("output", "channels")
+BITS_PER_SAMPLE		= cfg.getint("output", "bits_per_sample")
 
-FILENAME_FORMAT = cfg.get("filename", "format", DEFAULT_FILENAME_FORMAT)
-CONVERT_CHARS = cfg.getbool("filename", "convert_chars", False)
+FILENAME_FORMAT		= cfg.get("filename", "format", DEFAULT_FILENAME_FORMAT)
+CONVERT_CHARS		= cfg.getbool("filename", "convert_chars", False)
+
+FLAC_COMPRESSION	= cfg.getint("flac", "compression")
+OGG_COMPRESSION		= cfg.getint("ogg", "compression")
+MP3_BITRATE		= cfg.getint("mp3", "bitrate")

@@ -59,9 +59,9 @@ class ID3Tagger:
 		off = self.__offset.get(tag)
 		if off:
 			struct.pack_into("30s", self.v1, off, value)
-		elif tag is "date":
+		elif tag == "date":
 			struct.pack_into("4s", self.v1, 93, value)
-		elif tag is "tracknumber":
+		elif tag == "tracknumber":
 			number = int(value.partition(b"/")[0])
 			struct.pack_into("B", self.v1, 126, number)
 
@@ -99,7 +99,7 @@ class Mp3Handler(BaseHandler):
 
 		return self.build()
 
-	def do_tag(self, path, tags):
+	def tag(self, path, tags):
 		tagger = ID3Tagger()
 
 		for k, v in tags.items():
@@ -111,15 +111,6 @@ class Mp3Handler(BaseHandler):
 
 		tagger.write(path)
 		return True
-
-	def tag(self, path, tags):
-		self.log("Tag [%s] : ", path)
-		if self.do_tag(path, tags):
-			self.log("OK\n")
-			return True
-
-		self.log("FAILED\n")
-		return False
 
 def init():
 	return Mp3Handler

@@ -160,12 +160,11 @@ def parse_args():
 		help="do not use temporary directory")
 
 	enc.add_option("-C", "--compression", type="int",
-		dest="compression", default=config.COMPRESSION,
-		metavar="FACTOR",
+		dest="compression", metavar="FACTOR",
 		help="compression factor for output format (used for flac)")
 
 	enc.add_option("--bitrate", type="int",
-		dest="bitrate", default=config.BITRATE,
+		dest="bitrate", default=config.MP3_BITRATE,
 		help="audio bitrate (used for mp3)")
 
 	parser.add_option_group(enc)
@@ -213,14 +212,16 @@ def parse_args():
 
 	return parser.parse_args()
 
-def process_options(opt):
-	if opt.compression is not None and (opt.compression < 0 or opt.compression > 8):
-		printerr("invalid compression value %d, must be in range 0 .. 8", opt.compression)
+def option_check_range(option, value, min, max):
+	if value is not None and (value < min or value > max):
+		printerr("invalid %s value %d, must be in range %d .. %d", option, value, min, max)
 		return False
 
-	if opt.bitrate is not None and (opt.bitrate < 32 or opt.bitrate > 320):
-		printerr("invalid bitrate value %d, must be in range 32 .. 320", opt.bitrate)
-		return False
+	return True
+
+def process_options(opt):
+	def choose(a, b):
+		return a if a is not None else b
 
 	if opt.type is None and config.TYPE:
 		if not formats.issupported(config.TYPE):
@@ -232,6 +233,18 @@ def process_options(opt):
 	if not opt.dump and opt.type is None:
 		printerr("--type option is missed")
 		return False
+
+	if opt.type == "flac":
+		opt.compression = choose(opt.compression, config.FLAC_COMPRESSION)
+		if not option_check_range("compression", opt.compression, 0, 8):
+			return False
+	elif opt.type == "ogg":
+		opt.compression = choose(opt.compression, config.OGG_COMPRESSION)
+		if not option_check_range("compression", opt.compression, -1, 10):
+			return False
+	elif opt.type == "mp3":
+		if not option_check_range("bitrate", opt.bitrate, 32, 320):
+			return False
 
 	if not opt.dir:
 		opt.dir = u"."
@@ -431,8 +444,12 @@ class CueSplitter:
 		return self.track_info[track].tags
 
 	def tag(self, track, path):
+		printf("Tag [%s] : ", path)
 		if not self.enctype.tag(path, self.track_tags(track)):
+			printf("FAILED\n")
 			sys.exit(1)
+
+		printf("OK\n")
 
 	def copy_file(self, file):
 		noteq = lambda a, b: a and a != b
