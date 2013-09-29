@@ -142,7 +142,7 @@ def parse_args():
 	enc = OptionGroup(parser, "Encoding options")
 
 	enc.add_option("-t", "--type", dest="type",
-		choices = formats.supported(),
+		choices = formats.supported() + ["help"],
 		help="output file format")
 
 	enc.add_option("--coding", dest="coding",
@@ -161,7 +161,7 @@ def parse_args():
 
 	enc.add_option("-C", "--compression", type="int",
 		dest="compression", metavar="FACTOR",
-		help="compression factor for output format (used for flac)")
+		help="compression factor for output format (used for flac, ogg)")
 
 	enc.add_option("--bitrate", type="int",
 		dest="bitrate", default=config.MP3_BITRATE,
@@ -222,6 +222,10 @@ def option_check_range(option, value, min, max):
 def process_options(opt):
 	def choose(a, b):
 		return a if a is not None else b
+
+	if opt.type == "help":
+		printerr("supported formats: " + " ".join(formats.supported()))
+		return False
 
 	if opt.type is None and config.TYPE:
 		if not formats.issupported(config.TYPE):
