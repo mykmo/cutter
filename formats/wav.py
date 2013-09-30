@@ -11,9 +11,5 @@ class WavHandler(BaseHandler):
 
 		return self.build()
 
-	def tag(self, *args):
-		self.log("SKIP ")
-		return True
-
 def init():
 	return WavHandler

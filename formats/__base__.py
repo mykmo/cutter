@@ -23,3 +23,6 @@ class BaseHandler:
 			self.add("-b %d" % opt.bits_per_sample)
 		if opt.channels and opt.channels != info.channels:
 			self.add("-c %d" % opt.channels)
+
+	def is_tag_supported(self):
+		return hasattr(self, "tag")

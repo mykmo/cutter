@@ -351,6 +351,7 @@ class CueSplitter:
 		self.tracktotal = len(list(self.all_tracks()))
 
 		self.enctype = formats.handler(opt.type, logger=printf)
+		self.tag_supported = self.enctype.is_tag_supported()
 
 		self.tags = {
 			"album": self.opt.album or self.cue.get("title"),
@@ -448,6 +449,9 @@ class CueSplitter:
 		return self.track_info[track].tags
 
 	def tag(self, track, path):
+		if not self.tag_supported:
+			return
+
 		printf("Tag [%s] : ", path)
 		if not self.enctype.tag(path, self.track_tags(track)):
 			printf("FAILED\n")
