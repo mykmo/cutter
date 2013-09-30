@@ -1,7 +1,7 @@
-from coding import to_unicode, to_bytes
-from tools import *
+from . coding import to_unicode, to_bytes
+from . tools import *
 
-import formats
+from . import formats
 
 from tempfile import mkdtemp
 from itertools import chain

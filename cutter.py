@@ -1,11 +1,9 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
-from coding import to_unicode, to_bytes
-from splitter import Splitter
-from tools import *
-
-import formats
-import cue
+from cutter import formats, cue
+from cutter.coding import to_unicode, to_bytes
+from cutter.splitter import Splitter
+from cutter.tools import *
 
 from optparse import OptionParser, OptionGroup
 
@@ -13,7 +11,7 @@ import sys
 import os
 
 try:
-	import config
+	from cutter import config
 except Exception as err:
 	printerr("import config failed: %s", err)
 	sys.exit(0)

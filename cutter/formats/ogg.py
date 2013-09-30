@@ -1,14 +1,14 @@
-from formats.__base__ import *
-from coding import to_bytes
+from . __base__ import *
+from .. coding import to_bytes
 
 import subprocess
 
-class FlacHandler(BaseHandler):
-	name = "flac"
-	ext = "flac"
+class OggHandler(BaseHandler):
+	name = "ogg"
+	ext = "ogg"
 
 	def encode(self, opt, info):
-		self.add("flac sox -")
+		self.add("cust ext=%s sox -" % self.ext)
 
 		if opt.compression is not None:
 			self.add("-C %d" % opt.compression)
@@ -19,7 +19,7 @@ class FlacHandler(BaseHandler):
 		return self.build()
 
 	def tag(self, path, tags):
-		args = ["metaflac", "--remove-all-tags", "--import-tags-from=-", path]
+		args = ["vorbiscomment", "--raw", "--write", path]
 
 		proc = subprocess.Popen(args, stdin = subprocess.PIPE)
 		for k, v in tags.items():
@@ -30,4 +30,4 @@ class FlacHandler(BaseHandler):
 		return proc.wait() is 0
 
 def init():
-	return FlacHandler
+	return OggHandler

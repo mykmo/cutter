@@ -1,5 +1,5 @@
-from formats.__base__ import *
-from coding import to_bytes
+from . __base__ import *
+from .. coding import to_bytes
 
 import subprocess
 import struct

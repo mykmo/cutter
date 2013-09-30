@@ -1,4 +1,4 @@
-from formats.__base__ import *
+from . __base__ import *
 
 class WavHandler(BaseHandler):
 	name = "wav"

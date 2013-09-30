@@ -1,7 +1,7 @@
 from os.path import basename
 import sys
 
-import cue
+from cutter import cue
 
 if sys.version_info.major == 2:
 	class Encoded:
