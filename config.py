@@ -1,4 +1,4 @@
-from utils import is_python_v2, to_unicode
+from coding import is_python_v2, to_unicode
 import os
 
 try:

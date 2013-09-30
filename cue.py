@@ -319,7 +319,7 @@ def __read_file(filename, coding = None):
 
 	return encoded
 
-def read_cue(filename, coding = None, on_error = None):
+def read(filename, coding = None, on_error = None):
 	if on_error:
 		def msg(fmt, *args):
 			err = CueParserError(fmt % args)

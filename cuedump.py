@@ -1,7 +1,7 @@
 from os.path import basename
 import sys
 
-from cue import read_cue
+import cue
 
 if sys.version_info.major == 2:
 	class Encoded:
@@ -35,7 +35,7 @@ if len(sys.argv) != 2:
 	sys.exit(1)
 
 try:
-	cue = read_cue(sys.argv[1], on_error = lambda err:\
+	cuesheet = cue.read(sys.argv[1], on_error = lambda err:\
 		sys.stderr.write("** %s:%d: %s\n" % (progname, err.line, err))
 	)
 except Exception as err:
@@ -43,10 +43,10 @@ except Exception as err:
 	sys.exit(1)
 
 printf("Cue attributes:\n")
-for k, v in cue.attrs():
+for k, v in cuesheet.attrs():
 	printf("\t%s = %s\n", k, quote(v))
 
-for file in cue.files(filter_audio=False):
+for file in cuesheet.files(filter_audio=False):
 	printf("File %s %s\n", quote(file.name), file.type)
 	for track in file.tracks(filter_audio=False):
 		printf("\tTrack %d\n", track.number)
