@@ -7,4 +7,4 @@ OK 6. copy file instead of convert if possible
 OK 7. substitute odd symbols in track names
 OK 8. add charset coding argument
 OK 9. prepare setup
-10. create default config on startup
+OK 10. create default config on startup
