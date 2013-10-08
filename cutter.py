@@ -2,7 +2,7 @@
 
 from cutter import formats, cue
 from cutter.coding import to_unicode, to_bytes
-from cutter.splitter import Splitter
+from cutter.splitter import Splitter, StreamInfo
 from cutter.tools import *
 
 from optparse import OptionParser, OptionGroup
@@ -255,7 +255,7 @@ def main():
 		cuesheet.dir += "/"
 
 	{
-		"cue":		lambda: print_cue(cue),
+		"cue":		lambda: print_cue(cuesheet),
 		"tags":		lambda: Splitter(cuesheet, options).dump_tags(),
 		"tracks":	lambda: Splitter(cuesheet, options).dump_tracks(),
 		None:		lambda: Splitter(cuesheet, options).split()

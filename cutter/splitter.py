@@ -241,7 +241,7 @@ class Splitter:
 	def copy_file(self, file):
 		noteq = lambda a, b: a and a != b
 
-		if file.info.type != self.encode.name:
+		if file.info.type != self.enctype.name:
 			return False
 		if noteq(self.opt.sample_rate, file.info.sample_rate):
 			return False
