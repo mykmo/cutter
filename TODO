@@ -8,3 +8,4 @@ OK 7. substitute odd symbols in track names
 OK 8. add charset coding argument
 OK 9. prepare setup
 OK 10. create default config on startup
+11. make cchardet optional
