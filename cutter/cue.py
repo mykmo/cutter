@@ -1,7 +1,11 @@
-from cchardet import detect as encoding_detect
 import codecs
 import sys
 import re
+
+try:
+	from cchardet import detect as encoding_detect
+except ImportError:
+	encoding_detect = None
 
 class Track:
 	def __init__(self, number, datatype):
@@ -303,6 +307,8 @@ def __read_file(filename, coding = None):
 	try:
 		encoded = data.decode("utf-8-sig")
 	except UnicodeDecodeError:
+		if not encoding_detect:
+			raise Exception("unknown encoding (autodetect is off)")
 		pass
 
 	if encoded is None:

@@ -213,6 +213,9 @@ def find_cuefile(path):
 	printerr("no cue file")
 	sys.exit(1)
 
+def switch(value, opts):
+	opts.get(value, lambda: None)()
+
 def main():
 	options, args = parse_args()
 	if not process_options(options):
@@ -254,12 +257,12 @@ def main():
 	if cuesheet.dir:
 		cuesheet.dir += "/"
 
-	{
+	switch(options.dump, {
 		"cue":		lambda: print_cue(cuesheet),
 		"tags":		lambda: Splitter(cuesheet, options).dump_tags(),
 		"tracks":	lambda: Splitter(cuesheet, options).dump_tracks(),
 		None:		lambda: Splitter(cuesheet, options).split()
-	}[options.dump]()
+	})
 
 	return 0
 
