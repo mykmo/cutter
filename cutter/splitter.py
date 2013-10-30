@@ -124,14 +124,7 @@ class Splitter:
 			printerr("invalid format option: %s", err)
 			sys.exit(1)
 
-	def __init__(self, cue, opt):
-		self.cue = cue
-		self.opt = opt
-		self.tracktotal = len(list(self.all_tracks()))
-
-		self.enctype = formats.handler(opt.type, logger=printf)
-		self.tag_supported = self.enctype.is_tag_supported()
-
+	def init_tags(self):
 		self.tags = {
 			"album": self.opt.album or self.cue.get("title"),
 			"date": self.opt.date or self.cue.get("date"),
@@ -144,13 +137,13 @@ class Splitter:
 			"albumartist": self.opt.albumartist
 		}
 
-		tmp = self.format_by_tags(os.path.dirname(opt.fmt), self.tags, True)
+		tmp = self.format_by_tags(os.path.dirname(self.opt.fmt), self.tags, True)
 
-		if opt.convert_chars:
+		if self.opt.convert_chars:
 			tmp = convert_characters(tmp)
 
-		self.dest = os.path.join(opt.dir, tmp)
-		track_fmt = os.path.basename(opt.fmt)
+		self.dest = os.path.join(self.opt.dir, tmp)
+		track_fmt = os.path.basename(self.opt.fmt)
 
 		tracknumber = 0
 		self.track_info = {}
@@ -159,6 +152,16 @@ class Splitter:
 			self.track_info[track] = self.get_track_info(
 				track, tracknumber, track_fmt
 			)
+
+	def __init__(self, cue, opt):
+		self.cue = cue
+		self.opt = opt
+		self.tracktotal = len(list(self.all_tracks()))
+
+		self.enctype = formats.handler(opt.type, logger=printf)
+		self.tag_supported = self.enctype.is_tag_supported()
+
+		self.init_tags()
 
 	def get_track_info(self, track, tracknumber, fmt):
 		tags = dict(self.tags)

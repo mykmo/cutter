@@ -45,7 +45,7 @@ class File:
 		self._tracks.append(track)
 
 	def isaudio(self):
-		return self.type == "WAVE"
+		return self.type in ("WAVE", "FLAC")
 
 	def has_audio_tracks(self):
 		return len(list(self.tracks())) > 0

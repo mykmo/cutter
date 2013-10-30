@@ -9,6 +9,9 @@ from optparse import OptionParser, OptionGroup
 
 import sys
 import os
+import re
+
+re_range = re.compile("^(\d+)-(\d+)$")
 
 try:
 	from cutter import config
@@ -100,6 +103,8 @@ def parse_args():
 		dest="bitrate", default=config.MP3_BITRATE,
 		help="audio bitrate (used for mp3)")
 
+	enc.add_option("--tracks", dest="tracks", help="select tracks")
+
 	parser.add_option_group(enc)
 
 	fname = OptionGroup(parser, "Filename options")
@@ -152,6 +157,29 @@ def option_check_range(option, value, min, max):
 
 	return True
 
+def tracks_parse(string):
+	tracks = set()
+
+	for item in string.split(","):
+		try:
+			value = int(item)
+			tracks.add(value)
+		except ValueError:
+			m = re_range.match(item)
+			if not m:
+				return None
+
+			start, end = int(m.group(1)), int(m.group(2))
+			if start <= 0 or end <= 0 or start == end:
+				return None
+
+			if start > end:
+				start, end = end, start
+
+			tracks.update(range(start, end + 1))
+
+	return None if len(tracks) == 0 else tracks
+
 def process_options(opt):
 	def choose(a, b):
 		return a if a is not None else b
@@ -201,6 +229,14 @@ def process_options(opt):
 		opt.convert_chars = config.CONVERT_CHARS
 	if opt.use_tempdir is None:
 		opt.use_tempdir = config.USE_TEMPDIR
+
+	if opt.tracks is not None:
+		tracks = tracks_parse(opt.tracks)
+		if not tracks:
+			printerr("invalid tracks option \"%s\"", opt.tracks)
+			return False
+
+		opt.tracks = tracks
 
 	return True
 
