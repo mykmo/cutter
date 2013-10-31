@@ -1,15 +1,11 @@
-from . __base__ import *
+from . sox import *
 
-class WavHandler(BaseHandler):
+class WavHandler(SoxHandler):
 	name = "wav"
 	ext = "wav"
 
-	def encode(self, opt, info):
-		self.add("wav sox -")
-		self.add_sox_args(opt, info)
-		self.add("%f")
-
-		return self.build()
+	def encode(self, path, opt, info):
+		return self.sox_args(path, opt, info)
 
 def init():
 	return WavHandler

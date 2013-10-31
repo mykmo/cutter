@@ -1,22 +1,21 @@
-from . __base__ import *
+from . sox import *
 from .. coding import to_bytes
 
 import subprocess
 
-class FlacHandler(BaseHandler):
+class FlacHandler(SoxHandler):
 	name = "flac"
 	ext = "flac"
+	cmd = "flac"
 
-	def encode(self, opt, info):
-		self.add("flac sox -")
-
+	def encode(self, path, opt, info):
 		if opt.compression is not None:
-			self.add("-C %d" % opt.compression)
+			self.set_compression(opt.compression)
 
-		self.add_sox_args(opt, info)
-		self.add("%f")
+		return self.sox_args(path, opt, info)
 
-		return self.build()
+	def decode(self, filename):
+		return [self.cmd, "-d", "-c", "-s", filename]
 
 	def tag(self, path, tags):
 		args = ["metaflac", "--remove-all-tags", "--import-tags-from=-", path]

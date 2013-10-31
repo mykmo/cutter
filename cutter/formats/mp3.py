@@ -1,4 +1,4 @@
-from . __base__ import *
+from . sox import *
 from .. coding import to_bytes
 
 import subprocess
@@ -84,20 +84,15 @@ class ID3Tagger:
 
 		fp.close()
 
-class Mp3Handler(BaseHandler):
+class Mp3Handler(SoxHandler):
 	name = "mp3"
 	ext = "mp3"
 
-	def encode(self, opt, info):
-		self.add("cust ext=%s sox -" % self.ext)
-
+	def encode(self, path, opt, info):
 		if opt.bitrate is not None:
-			self.add("-C %d" % opt.bitrate)
+			self.set_compression(opt.bitrate)
 
-		self.add_sox_args(opt, info)
-		self.add("%f")
-
-		return self.build()
+		return self.sox_args(path, opt, info)
 
 	def tag(self, path, tags):
 		tagger = ID3Tagger()

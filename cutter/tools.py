@@ -24,3 +24,10 @@ def debug(fmt, *args):
 	if msg[-1] != "\n":
 		msg += "\n"
 	sys.stderr.write("-- " + msg)
+
+def msf(ts):
+	m = ts / (60 * 75)
+	s = ts / 75 % 60
+	f = ts % 75
+
+	return "%d:%02d.%02d" % (m, s, f)

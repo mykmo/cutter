@@ -48,7 +48,10 @@ class File:
 		return self.type in ("WAVE", "FLAC")
 
 	def has_audio_tracks(self):
-		return len(list(self.tracks())) > 0
+		return self.ntracks() > 0
+
+	def ntracks(self):
+		return len(list(self.tracks()))
 
 	def split_points(self, info):
 		rate = info.sample_rate * info.bits_per_sample * info.channels // 8

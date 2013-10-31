@@ -65,37 +65,22 @@ class TempLink:
 		self.remove()
 
 class StreamInfo:
-	__mapping = {
-		b"Channels:": "channels",
-		b"Bits/sample:": "bits_per_sample",
-		b"Samples/sec:": "sample_rate"
-	}
-
 	@staticmethod
 	def get(name):
-		info = StreamInfo()
-		proc = subprocess.Popen(["shninfo", name], stdout = subprocess.PIPE)
-		for line in proc.stdout.readlines():
-			data = line.split()
-			attr = StreamInfo.__mapping.get(data[0])
-			if attr:
-				setattr(info, attr, int(data[1]))
-			elif line.startswith(b"Handled by:"):
-				info.type = to_unicode(data[2])
+		stream = formats.decoder_open(name)
 
-		if proc.wait():
+		if not stream or not stream.ready():
 			return None
 
-		return info
+		return stream.info()
 
 class Splitter:
 	EXT = ["ape", "flac", "wv"]
 
 	class File:
-		def __init__(self, fileobj, name, info):
+		def __init__(self, fileobj, path):
 			self.fileobj = fileobj
-			self.name = name
-			self.info = info
+			self.path = path
 
 		def __getattr__(self, attr):
 			return getattr(self.fileobj, attr)
@@ -125,6 +110,8 @@ class Splitter:
 			sys.exit(1)
 
 	def init_tags(self):
+		self.tracktotal = self.opt.tracktotal or len(list(self.all_tracks()))
+
 		self.tags = {
 			"album": self.opt.album or self.cue.get("title"),
 			"date": self.opt.date or self.cue.get("date"),
@@ -145,21 +132,20 @@ class Splitter:
 		self.dest = os.path.join(self.opt.dir, tmp)
 		track_fmt = os.path.basename(self.opt.fmt)
 
-		tracknumber = 0
+		tracknumber = self.opt.trackstart or 1
 		self.track_info = {}
 		for track in self.all_tracks():
-			tracknumber += 1
 			self.track_info[track] = self.get_track_info(
 				track, tracknumber, track_fmt
 			)
+			tracknumber += 1
 
 	def __init__(self, cue, opt):
 		self.cue = cue
 		self.opt = opt
-		self.tracktotal = len(list(self.all_tracks()))
 
-		self.enctype = formats.handler(opt.type, logger=printf)
-		self.tag_supported = self.enctype.is_tag_supported()
+		self.encoder = formats.encoder(opt.type)
+		self.tag_supported = self.encoder.is_tag_supported()
 
 		self.init_tags()
 
@@ -181,7 +167,7 @@ class Splitter:
 		if self.opt.convert_chars:
 			name = convert_characters(name)
 
-		return self.TrackInfo(name + "." + self.enctype.ext, tags)
+		return self.TrackInfo(name + "." + self.encoder.ext, tags)
 
 	def find_realfile(self, name):
 		if not name.endswith(".wav"):
@@ -203,25 +189,20 @@ class Splitter:
 				debug("skip file %s: no tracks", quote(file.name))
 				continue
 
-			name = self.cue.dir + file.name
-			if not os.path.exists(name):
+			path = self.cue.dir + file.name
+			if not os.path.exists(path):
 				real = self.find_realfile(file.name)
 				if not real:
 					printerr("no such file %s", quote(file.name))
 					sys.exit(1)
-				name = self.cue.dir + real
+				path = self.cue.dir + real
 
-			info = StreamInfo.get(name)
-			if info is None:
-				printerr("%s: unknown type", quote(file.name))
-				sys.exit(1)
-
-			lst.append(self.File(file, name, info))
+			lst.append(self.File(file, path))
 
 		return lst
 
 	def shntool_args(self, tool, info):
-		encode = self.enctype.encode(self.opt, info)
+		encode = self.encoder.encode(self.opt, info)
 		return [tool, "-w", "-d", self.dest, "-o", encode]
 
 	def track_name(self, track):
@@ -234,37 +215,41 @@ class Splitter:
 		if not self.tag_supported:
 			return
 
-		printf("Tag [%s] : ", path)
-		if not self.enctype.tag(path, self.track_tags(track)):
+		printf("tag %s: ", quote(self.track_name(track)))
+		if not self.encoder.tag(path, self.track_tags(track)):
 			printf("FAILED\n")
 			sys.exit(1)
 
 		printf("OK\n")
 
-	def copy_file(self, file):
+	def is_need_convert(self, info):
 		noteq = lambda a, b: a and a != b
 
-		if file.info.type != self.enctype.name:
-			return False
-		if noteq(self.opt.sample_rate, file.info.sample_rate):
-			return False
-		if noteq(self.opt.bits_per_sample, file.info.bits_per_sample):
-			return False
-		if noteq(self.opt.channels, file.info.channels):
-			return False
+		if info.type != self.encoder.name:
+			return True
+		if noteq(self.opt.sample_rate, info.sample_rate):
+			return True
+		if noteq(self.opt.bits_per_sample, info.bits_per_sample):
+			return True
+		if noteq(self.opt.channels, info.channels):
+			return True
 
+		return False
+
+	def copy_file(self, file):
 		track = list(file.tracks())[0]
 		trackname = self.track_name(track)
 		path = os.path.join(self.dest, trackname)
 
+		printf("copy %s -> %s", quote(file.path), quote(path))
 		if self.opt.dry_run:
-			printf("Copy [%s] --> [%s]\n", file.name, path)
-			return True
+			printf("\n")
+			return
 
-		printf("Copy [%s] --> [%s] : ", file.name, path)
+		printf(": ")
 
 		try:
-			shutil.copyfile(file.name, path)
+			shutil.copyfile(file.path, path)
 		except Exception as err:
 			printf("FAILED: %s\n", err)
 			sys.exit(1)
@@ -273,64 +258,90 @@ class Splitter:
 
 		self.tag(track, path)
 
-		return True
+	def open_decode(self, path):
+		stream = formats.decoder_open(path, self.opt)
 
-	def convert_file(self, file):
-		track = list(file.tracks())[0]
-		trackname = self.track_name(track)
+		if stream is None:
+			printerr("%s: unsupported type", quote(path))
+		elif not stream.ready():
+			printerr("decode failed, command: %s", stream.get_command())
 
-		args = self.shntool_args("shnconv", file.info)
+			status, msg = stream.get_status()
+			if not len(msg):
+				printerr("exit code %d", status)
+			else:
+				printerr("exit code %d, stderr:\n%s", status, msg)
 
-		if self.opt.dry_run:
-			name = "link to " + quote(file.name, "'")
-			debug("run %s", " ".join(map(quote, args + [name])))
+			stream = None
+
+		return stream
+
+	def print_decode_info(self, path, stream):
+		info = stream.info()
+		debug("decode: %s", stream.get_command())
+		debug("input: %s [%s] (%d/%d, %d ch)", quote(path),
+			info.type, info.bits_per_sample, info.sample_rate,
+			info.channels)
+
+	def print_encode_info(self, stream):
+		debug("encode: %s", stream.get_command())
+
+	@staticmethod
+	def track_timerange(track):
+		ts = "%8s -" % msf(track.begin)
+
+		if track.end is not None:
+			ts += " %8s" % msf(track.end)
+
+		return ts
+
+	@staticmethod
+	def track_length(track):
+		if track.end is None:
+			return None
+
+		return track.end - track.begin
+
+	def split_file(self, file):
+		stream = self.open_decode(file.path)
+		if not stream:
 			return
 
-		try:
-			link = TempLink(os.path.abspath(file.name), trackname)
-		except OSError as err:
-			printerr("create symlink %s failed: %s", quote(trackname), err)
-			sys.exit(1)
+		if self.opt.verbose and self.opt.dry_run:
+			self.print_decode_info(file.path, stream)
 
-		ret = subprocess.call(args + [str(link)])
-		link.remove()
+		if file.ntracks() == 1:
+			if not self.is_need_convert(stream.info()):
+				stream.close()
+				self.copy_file(file)
+				return
 
-		if ret:
-			printerr("shnconv failed: exit code %d", ret);
-			sys.exit(1)
-
-		self.tag(track, os.path.join(self.dest, trackname))
-
-	def split_file(self, file, points):
-		args = self.shntool_args("shnsplit", file.info) + [file.name]
-
-		if self.opt.dry_run:
-			debug("run %s", " ".join(map(quote, args)))
-			return
-
-		proc = subprocess.Popen(args, stdin = subprocess.PIPE)
-		proc.stdin.write(to_bytes("\n".join(map(str, points))))
-		proc.stdin.close()
-
-		if proc.wait():
-			printerr("shnsplit failed: exit code %d", proc.returncode)
-			sys.exit(1)
-
-		splitted = filterdir(self.dest, "split-track")
-		for track, filename in zip(file.tracks(), splitted):
+		for track in file.tracks():
 			trackname = self.track_name(track)
 			path = os.path.join(self.dest, trackname)
 
-			printf("Rename [%s] --> [%s] : ", filename, trackname)
-			try:
-				os.rename(os.path.join(self.dest, filename), path)
-			except OSError as err:
-				printf("FAILED: %s\n", err)
-				sys.exit(1)
-			else:
-				printf("OK\n")
+			ts = self.track_timerange(track)
+			printf("split %s (%s) -> %s", quote(file.path), ts, quote(trackname))
+			printf("\n" if self.opt.dry_run else ": ")
+
+			stream.seek(track.begin)
+			reader = stream.get_reader(self.track_length(track))
+
+			out = self.encoder.open(reader, path, self.opt)
+
+			if self.opt.dry_run:
+				if self.opt.verbose:
+					self.print_encode_info(out)
+				continue
+
+			out.process()
+			out.close()
+
+			printf("OK\n")
 
 			self.tag(track, path)
+
+		stream.close()
 
 	def check_duplicates(self):
 		names = [x.name for x in self.track_info.values()]
@@ -346,7 +357,7 @@ class Splitter:
 				debug("skip non file %s", quote(file))
 				continue
 
-			printf("Copy [%s] into [%s] : ", file, dest)
+			printf("copy %s -> %s: ", quote(file), quote(dest))
 
 			try:
 				shutil.copy(path, dest)
@@ -370,12 +381,7 @@ class Splitter:
 				self.dest = to_unicode(tempdir)
 
 		for file in files:
-			points = list(file.split_points(file.info))
-			if not points:
-				if not self.copy_file(file):
-					self.convert_file(file)
-			else:
-				self.split_file(file, points)
+			self.split_file(file)
 
 		if self.realpath:
 			self.transfer_files(self.dest, self.realpath)

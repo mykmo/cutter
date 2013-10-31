@@ -1,22 +1,17 @@
-from . __base__ import *
+from . sox import *
 from .. coding import to_bytes
 
 import subprocess
 
-class OggHandler(BaseHandler):
+class OggHandler(SoxHandler):
 	name = "ogg"
 	ext = "ogg"
 
-	def encode(self, opt, info):
-		self.add("cust ext=%s sox -" % self.ext)
-
+	def encode(self, path, opt, info):
 		if opt.compression is not None:
-			self.add("-C %d" % opt.compression)
+			self.set_compression(opt.compression)
 
-		self.add_sox_args(opt, info)
-		self.add("%f")
-
-		return self.build()
+		return self.sox_args(path, opt, info)
 
 	def tag(self, path, tags):
 		args = ["vorbiscomment", "--raw", "--write", path]

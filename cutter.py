@@ -19,13 +19,6 @@ except Exception as err:
 	printerr("import config failed: %s", err)
 	sys.exit(0)
 
-def msf(ts):
-	m = ts / (60 * 75)
-	s = ts / 75 % 60
-	f = ts % 75
-
-	return "%d:%02d:%02d" % (m, s, f)
-
 def print_cue(cue):
 	for k, v in cue.attrs():
 		printf("%s: %s\n", k.upper(), quote(v))
@@ -74,6 +67,9 @@ def parse_args():
 
 	parser.add_option("-n", "--dry-run",
 		action="store_true", default=False, dest="dry_run")
+
+	parser.add_option("-v", "--verbose",
+		dest="verbose", action="store_true", default=False)
 
 	enc = OptionGroup(parser, "Encoding options")
 
@@ -145,6 +141,9 @@ def parse_args():
 			tag.add_option(*["--" + s for s in opt], dest=opt[0], default="")
 		else:
 			tag.add_option("--" + opt, dest=opt, default="")
+
+	tag.add_option("--track-total", type="int", dest="tracktotal")
+	tag.add_option("--track-start", type="int", dest="trackstart")
 
 	parser.add_option_group(tag)
 
