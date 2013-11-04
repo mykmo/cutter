@@ -156,7 +156,7 @@ def option_check_range(option, value, min, max):
 
 	return True
 
-def tracks_parse(string):
+def parse_tracks(string):
 	tracks = set()
 
 	for item in string.split(","):
@@ -230,7 +230,7 @@ def process_options(opt):
 		opt.use_tempdir = config.USE_TEMPDIR
 
 	if opt.tracks is not None:
-		tracks = tracks_parse(opt.tracks)
+		tracks = parse_tracks(opt.tracks)
 		if not tracks:
 			printerr("invalid tracks option \"%s\"", opt.tracks)
 			return False

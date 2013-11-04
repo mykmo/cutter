@@ -9,5 +9,6 @@ OK 8. add charset coding argument
 OK 9. prepare setup
 OK 10. create default config on startup
 OK 11. make cchardet optional
-12. manually convert files
-13. use python wave module
+OK 12. manually convert files
+OK 13. use python wave module
+14. show progress of encoding

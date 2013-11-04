@@ -4,10 +4,10 @@ from . tools import *
 from . import formats
 
 from tempfile import mkdtemp
-from itertools import chain
 
 import collections
 import subprocess
+import itertools
 import shutil
 import sys
 import os
@@ -143,6 +143,7 @@ class Splitter:
 	def __init__(self, cue, opt):
 		self.cue = cue
 		self.opt = opt
+		self.tracks = None
 
 		self.encoder = formats.encoder(opt.type)
 		self.tag_supported = self.encoder.is_tag_supported()
@@ -200,10 +201,6 @@ class Splitter:
 			lst.append(self.File(file, path))
 
 		return lst
-
-	def shntool_args(self, tool, info):
-		encode = self.encoder.encode(self.opt, info)
-		return [tool, "-w", "-d", self.dest, "-o", encode]
 
 	def track_name(self, track):
 		return self.track_info[track].name
@@ -317,10 +314,16 @@ class Splitter:
 				return
 
 		for track in file.tracks():
+			ts = self.track_timerange(track)
+
+			if track not in self.tracks:
+				if self.opt.verbose:
+					printf("split %s (%s): SKIP\n", quote(file.path), ts)
+				continue
+
 			trackname = self.track_name(track)
 			path = os.path.join(self.dest, trackname)
 
-			ts = self.track_timerange(track)
 			printf("split %s (%s) -> %s", quote(file.path), ts, quote(trackname))
 			printf("\n" if self.opt.dry_run else ": ")
 
@@ -392,7 +395,18 @@ class Splitter:
 				sys.exit(1)
 
 	def all_tracks(self):
-		return chain(*[f.tracks() for f in self.cue.files()])
+		if self.tracks:
+			return self.tracks
+
+		tracks = itertools.chain(*[f.tracks() for f in self.cue.files()])
+
+		if self.opt.tracks is None:
+			self.tracks = list(tracks)
+		else:
+			mapped = zip(tracks, itertools.count(1))
+			self.tracks = [t for t, n in mapped if n in self.opt.tracks]
+
+		return self.tracks
 
 	def dump_tags(self):
 		add_line = False
