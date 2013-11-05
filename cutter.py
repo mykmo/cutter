@@ -5,7 +5,7 @@ from cutter.coding import to_unicode, to_bytes
 from cutter.splitter import Splitter, StreamInfo
 from cutter.tools import *
 
-from optparse import OptionParser, OptionGroup
+from optparse import OptionParser, OptionGroup, IndentedHelpFormatter
 
 import signal
 import sys
@@ -56,7 +56,9 @@ def print_cue(cue):
 					printf("\t\t%s: %s\n", k.upper(), quote(v))
 
 def parse_args():
-	parser = OptionParser(usage = u"Usage: %prog [options] cuefile")
+	parser = OptionParser(usage = u"Usage: %prog [options] cuefile",
+		formatter=IndentedHelpFormatter(max_help_position=40))
+
 	parser.add_option("--ignore",
 		action="store_true", default=False, dest="ignore",
 		help="ignore cue parsing errors")
@@ -64,7 +66,7 @@ def parse_args():
 	parser.add_option("--dump",
 		dest="dump", choices=["cue", "tags", "tracks"],
 		metavar="cue|tags|tracks",
-		help="print the cue sheet, file tags or track names")
+		help="print cue data, file tags or track names")
 
 	parser.add_option("-n", "--dry-run",
 		action="store_true", default=False, dest="dry_run")
@@ -72,25 +74,35 @@ def parse_args():
 	parser.add_option("-v", "--verbose",
 		dest="verbose", action="store_true", default=False)
 
+	general = OptionGroup(parser, "General options")
+
+	general.add_option("--tag",
+		dest="tag", action="store_true", default=False,
+		help="tag existing files, do not split")
+
+	general.add_option("--coding", dest="coding",
+		help="encoding of original text")
+
+	general.add_option("-d", "--dir",
+		dest="dir", default=config.DIR, help="output directory")
+
+	general.add_option("--use-tempdir",
+		dest="use_tempdir", action="store_true",
+		help="use temporary directory for files")
+
+	general.add_option("--no-tempdir",
+		dest="use_tempdir", action="store_false",
+		help="do not use temporary directory")
+
+	general.add_option("--tracks", dest="tracks", help="select tracks")
+
+	parser.add_option_group(general)
+
 	enc = OptionGroup(parser, "Encoding options")
 
 	enc.add_option("-t", "--type", dest="type",
 		choices = formats.supported() + ["help"],
 		help="output file format")
-
-	enc.add_option("--coding", dest="coding",
-		help="encoding of original text")
-
-	enc.add_option("-d", "--dir",
-		dest="dir", default=config.DIR, help="output directory")
-
-	enc.add_option("--use-tempdir",
-		dest="use_tempdir", action="store_true",
-		help="use temporary directory for files")
-
-	enc.add_option("--no-tempdir",
-		dest="use_tempdir", action="store_false",
-		help="do not use temporary directory")
 
 	enc.add_option("-C", "--compression", type="int",
 		dest="compression", metavar="FACTOR",
@@ -99,8 +111,6 @@ def parse_args():
 	enc.add_option("--bitrate", type="int",
 		dest="bitrate", default=config.MP3_BITRATE,
 		help="audio bitrate (used for mp3)")
-
-	enc.add_option("--tracks", dest="tracks", help="select tracks")
 
 	parser.add_option_group(enc)
 
@@ -143,8 +153,8 @@ def parse_args():
 		else:
 			tag.add_option("--" + opt, dest=opt, default="")
 
-	tag.add_option("--track-total", type="int", dest="tracktotal")
-	tag.add_option("--track-start", type="int", dest="trackstart")
+	tag.add_option("--track-total", type="int", dest="tracktotal", metavar="TOTAL")
+	tag.add_option("--track-start", type="int", dest="trackstart", metavar="START")
 
 	parser.add_option_group(tag)
 

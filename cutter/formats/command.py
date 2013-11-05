@@ -20,7 +20,7 @@ class CommandError(Exception):
 class Command:
 	def __init__(self, args, stdin=None, stdout=None, stderr=None):
 		self.proc = None
-		self.status = 0
+		self.status = None
 		self.status_msg = ""
 
 		try:

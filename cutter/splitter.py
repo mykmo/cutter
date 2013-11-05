@@ -205,6 +205,9 @@ class Splitter:
 	def track_name(self, track):
 		return self.track_info[track].name
 
+	def track_path(self, track):
+		return os.path.join(self.dest, self.track_name(track))
+
 	def track_tags(self, track):
 		return self.track_info[track].tags
 
@@ -212,7 +215,17 @@ class Splitter:
 		if not self.tag_supported:
 			return
 
-		printf("tag %s: ", quote(self.track_name(track)))
+		trackname = path if self.opt.tag else self.track_name(track)
+
+		printf("tag %s", quote(trackname))
+		if not os.path.exists(path):
+			printf(": NOT EXISTS\n")
+			return
+
+		printf("\n" if self.opt.dry_run else ": ")
+		if self.opt.dry_run:
+			return
+
 		if not self.encoder.tag(path, self.track_tags(track)):
 			printf("FAILED\n")
 			sys.exit(1)
@@ -235,8 +248,7 @@ class Splitter:
 
 	def copy_file(self, file):
 		track = list(file.tracks())[0]
-		trackname = self.track_name(track)
-		path = os.path.join(self.dest, trackname)
+		path = self.track_path(track)
 
 		printf("copy %s -> %s", quote(file.path), quote(path))
 		printf("\n" if self.opt.dry_run else ": ")
@@ -335,7 +347,7 @@ class Splitter:
 				continue
 
 			trackname = self.track_name(track)
-			path = os.path.join(self.dest, trackname)
+			path = self.track_path(track)
 
 			stream.seek(track.begin)
 			reader = stream.get_reader(self.track_length(track))
@@ -388,6 +400,10 @@ class Splitter:
 	def split(self):
 		self.check_duplicates()
 
+		if self.opt.tag:
+			self.tag_files()
+			return
+
 		files = self.open_files()
 
 		self.realpath = None
@@ -408,6 +424,10 @@ class Splitter:
 			except Exception as err:
 				printerr("rm %s failed: %s\n", self.dest, err)
 				sys.exit(1)
+
+	def tag_files(self):
+		for track in self.all_tracks():
+			self.tag(track, self.track_path(track))
 
 	def all_tracks(self):
 		if self.tracks:
@@ -437,5 +457,4 @@ class Splitter:
 
 	def dump_tracks(self):
 		for track in self.all_tracks():
-			trackname = self.track_name(track)
-			printf("%s\n", os.path.join(self.dest, trackname))
+			printf("%s\n", self.track_path(track))

@@ -1,7 +1,6 @@
 from . sox import *
+from . command import *
 from .. coding import to_bytes
-
-import subprocess
 
 class OggHandler(SoxHandler):
 	name = "ogg"
@@ -16,13 +15,18 @@ class OggHandler(SoxHandler):
 	def tag(self, path, tags):
 		args = ["vorbiscomment", "--raw", "--write", path]
 
-		proc = subprocess.Popen(args, stdin = subprocess.PIPE)
+		proc = Command(args, stdin=PIPE)
+		if not proc.ready():
+			return False
+
 		for k, v in tags.items():
 			if v is not "":
 				proc.stdin.write(to_bytes("%s=%s\n" % (k.upper(), v)))
-		proc.stdin.close()
 
-		return proc.wait() is 0
+		proc.stdin.close()
+		proc.close()
+
+		return proc.status is 0
 
 def init():
 	return OggHandler
