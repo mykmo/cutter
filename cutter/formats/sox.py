@@ -6,7 +6,7 @@ class SoxHandler:
 		self.compression = value
 
 	def sox_args(self, path, opt, info):
-		args = ["sox", "-V2", "-"]
+		args = ["sox", "-V1", "-"]
 
 		if self.compression is not None:
 			args.extend(["-C", str(self.compression)])

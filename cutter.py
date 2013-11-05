@@ -7,6 +7,7 @@ from cutter.tools import *
 
 from optparse import OptionParser, OptionGroup
 
+import signal
 import sys
 import os
 import re
@@ -251,7 +252,13 @@ def find_cuefile(path):
 def switch(value, opts):
 	opts.get(value, lambda: None)()
 
+def sigint_handler(sig, frame):
+	printf("\n")
+	sys.exit(1)
+
 def main():
+	signal.signal(signal.SIGINT, sigint_handler)
+
 	options, args = parse_args()
 	if not process_options(options):
 		sys.exit(1)
