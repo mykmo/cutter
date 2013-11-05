@@ -14,14 +14,18 @@ def __create_default(name):
 	fp = open(name, "w")
 
 	fp.write(
-"""[encoding]
-# type = <default format type>
-
+"""[general]
 # where to place new files
 dir = .
 
 # use temporary directory for converted files
 use_tempdir = false
+
+# show progress in percents
+progress = false
+
+[encoding]
+# type = <default format type>
 
 [output]
 # sample_rate =
@@ -84,9 +88,11 @@ cfg = CfgParser()
 if not cfg.read(os.path.expanduser(CONFIG_FILE_PATH)):
 	__create_default(CONFIG_FILE_PATH)
 
-DIR			= cfg.get("encoding", "dir", ".")
+DIR			= cfg.get("general", "dir", ".")
+USE_TEMPDIR		= cfg.getbool("general", "use_tempdir")
+PROGRESS		= cfg.getbool("general", "progress")
+
 TYPE			= cfg.get("encoding", "type")
-USE_TEMPDIR		= cfg.getbool("encoding", "use_tempdir")
 
 SAMPLE_RATE		= cfg.getint("output", "sample_rate")
 CHANNELS		= cfg.getint("output", "channels")

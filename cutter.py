@@ -94,6 +94,9 @@ def parse_args():
 		dest="use_tempdir", action="store_false",
 		help="do not use temporary directory")
 
+	general.add_option("--no-progress",
+		dest="show_progress", action="store_false")
+
 	general.add_option("--tracks", dest="tracks", help="select tracks")
 
 	parser.add_option_group(general)
@@ -248,7 +251,10 @@ def process_options(opt):
 
 		opt.tracks = tracks
 
-	opt.show_progress = os.isatty(sys.stdout.fileno())
+	if not os.isatty(sys.stdout.fileno()):
+		opt.show_progress = False
+	elif opt.show_progress is None:
+		opt.show_progress = config.PROGRESS
 
 	return True
 
