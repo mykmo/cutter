@@ -74,9 +74,11 @@ class Encoder:
 	def ready(self):
 		return self.proc.ready()
 
-	def process(self):
+	def process(self, progress):
 		if not self.proc.ready():
 			return
+
+		progress.init(self.reader.size())
 
 		while True:
 			data = self.reader.read(self.FRAME_BUFFER_SIZE)
@@ -84,6 +86,9 @@ class Encoder:
 				break
 
 			self.writer.writeframesraw(data)
+			progress.update(len(data))
+
+		progress.finish()
 
 	def get_command(self):
 		return self.command
@@ -92,7 +97,7 @@ class Encoder:
 		return self.proc.get_status()
 
 	def close(self):
-		if self.proc and self.proc.ready():
+		if self.proc is not None and self.proc.ready():
 			self.writer.close()
 			self.stream.close()
 			self.proc.close()

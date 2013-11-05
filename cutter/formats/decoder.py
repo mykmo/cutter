@@ -28,6 +28,9 @@ class Decoder:
 			params[3] = self.nframes
 			return params
 
+		def size(self):
+			return self.nframes * self.bytes_per_frame
+
 		def read(self, maxframes=None):
 			if self.nread >= self.nframes:
 				return []

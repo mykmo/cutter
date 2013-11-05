@@ -248,6 +248,8 @@ def process_options(opt):
 
 		opt.tracks = tracks
 
+	opt.show_progress = os.isatty(sys.stdout.fileno())
+
 	return True
 
 def find_cuefile(path):

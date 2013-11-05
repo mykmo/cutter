@@ -30,15 +30,6 @@ class Command:
 			self.status = "not started"
 			self.status_msg = err.strerror
 
-	def __getattr__(self, attr):
-		if self.proc is None:
-			raise CommandError("command not started")
-
-		if attr not in ("stdin", "stdout", "stderr"):
-			raise CommandError("unknown attribute '%s'", attr)
-
-		return getattr(self.proc, attr)
-
 	def ready(self):
 		return self.proc is not None
 
@@ -60,3 +51,12 @@ class Command:
 			self.status = strsignal(-self.status)
 
 		self.proc = None
+
+	def __getattr__(self, attr):
+		if self.proc is None:
+			raise CommandError("command not started")
+
+		if attr not in ("stdin", "stdout", "stderr"):
+			raise CommandError("unknown attribute '%s'" % attr)
+
+		return getattr(self.proc, attr)
