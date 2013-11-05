@@ -1,3 +1,4 @@
+from . command import *
 from . handler import *
 from .. tools import quote
 
@@ -52,7 +53,6 @@ class Encoder:
 			return getattr(self.fileobj, attr)
 
 	def __init__(self, handler, reader, filename, options):
-		self.closed = False
 		self.handler = handler
 
 		args = self.handler.encode(filename, options, reader.info())
@@ -62,15 +62,20 @@ class Encoder:
 			self.proc = None
 			return
 
-		self.proc = subprocess.Popen(args, stdin=subprocess.PIPE)
+		self.proc = Command(args, stdin=PIPE)
+		if not self.proc.ready():
+			return
 
 		self.reader = reader
 		self.stream = self.SafeStream(self.proc.stdin)
 		self.writer = wave.open(self.stream, "w")
 		self.writer.setparams(reader.wave_params())
 
+	def ready(self):
+		return self.proc.ready()
+
 	def process(self):
-		if self.proc is None:
+		if not self.proc.ready():
 			return
 
 		while True:
@@ -83,13 +88,14 @@ class Encoder:
 	def get_command(self):
 		return self.command
 
-	def close(self):
-		if self.closed or self.proc is None:
-			return
+	def get_status(self):
+		return self.proc.get_status()
 
-		self.writer.close()
-		self.stream.close()
-		self.proc.wait()
+	def close(self):
+		if self.proc and self.proc.ready():
+			self.writer.close()
+			self.stream.close()
+			self.proc.close()
 
 	def __del__(self):
 		self.close()

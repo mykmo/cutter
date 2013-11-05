@@ -1,8 +1,9 @@
 from . handler import *
+from . command import *
+
 from .. tools import quote
 from .. coding import to_unicode
 
-import subprocess
 import wave
 
 class DecoderError(Exception):
@@ -42,25 +43,20 @@ class Decoder:
 			return data
 
 	def __init__(self, handler, filename, options=None):
-		self.reader = None
-		self.closed = False
 		self.handler = handler
 
 		args = self.handler.decode(filename)
 		self.command = " ".join(map(quote, args))
 
-		self.proc = subprocess.Popen(
-			args, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-		)
+		self.proc = Command(args, stdout=PIPE, stderr=PIPE)
+		if not self.proc.ready():
+			return
 
 		try:
 			self.reader = wave.open(self.proc.stdout, "r")
 		except Exception as exc:
-			self.close()
-			if self.status:
-				self.status_msg = to_unicode(self.proc.stderr.read())
-			else:
-				self.status_msg = "wave.open: %s" % exc
+			self.proc.stdout.close()
+			self.proc.close("Exception: wave.open: %s" % repr(exc))
 			return
 
 		self._channels		= self.reader.getnchannels()
@@ -68,7 +64,7 @@ class Decoder:
 		self._sample_rate	= self.reader.getframerate()
 
 	def ready(self):
-		return self.reader is not None
+		return self.proc.ready()
 
 	def channels(self):
 		return self._channels
@@ -111,23 +107,13 @@ class Decoder:
 		return self.command
 
 	def get_status(self):
-		return self.status, self.status_msg
+		return self.proc.get_status()
 
 	def close(self):
-		if self.closed:
-			return
-
-		if self.reader:
+		if self.proc.ready():
 			self.reader.close()
-
-		if self.proc:
 			self.proc.stdout.close()
-			self.status = self.proc.wait()
-		else:
-			self.status = 0
-
-		self.status_msg = ""
-		self.closed = True
+			self.proc.close()
 
 	def __del__(self):
 		self.close()

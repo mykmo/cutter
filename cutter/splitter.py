@@ -239,11 +239,10 @@ class Splitter:
 		path = os.path.join(self.dest, trackname)
 
 		printf("copy %s -> %s", quote(file.path), quote(path))
-		if self.opt.dry_run:
-			printf("\n")
-			return
+		printf("\n" if self.opt.dry_run else ": ")
 
-		printf(": ")
+		if self.opt.dry_run:
+			return
 
 		try:
 			shutil.copyfile(file.path, path)
@@ -255,20 +254,40 @@ class Splitter:
 
 		self.tag(track, path)
 
+	@staticmethod
+	def print_command_error(name, stream):
+		status, msg = stream.get_status()
+
+		cmd = stream.get_command()
+		printerr("%s failed (%s), command: %s", name, status, cmd)
+		for line in msg.split("\n"):
+			if len(line):
+				printf("> %s\n", line)
+
 	def open_decode(self, path):
 		stream = formats.decoder_open(path, self.opt)
 
 		if stream is None:
 			printerr("%s: unsupported type", quote(path))
 		elif not stream.ready():
-			printerr("decode failed, command: %s", stream.get_command())
+			self.print_command_error("decode", stream)
+			stream = None
+		else:
+			if self.opt.verbose and self.opt.dry_run:
+				self.print_decode_info(path, stream)
 
-			status, msg = stream.get_status()
-			if not len(msg):
-				printerr("exit code %d", status)
-			else:
-				printerr("exit code %d, stderr:\n%s", status, msg)
+		return stream
 
+	def open_encode(self, reader, path):
+		stream = self.encoder.open(reader, path, self.opt)
+
+		if self.opt.dry_run:
+			if self.opt.verbose:
+				debug("encode: %s", stream.get_command())
+			return stream
+
+		if not stream.ready():
+			self.print_command_error("encode", stream)
 			stream = None
 
 		return stream
@@ -279,9 +298,6 @@ class Splitter:
 		debug("input: %s [%s] (%d/%d, %d ch)", quote(path),
 			info.type, info.bits_per_sample, info.sample_rate,
 			info.channels)
-
-	def print_encode_info(self, stream):
-		debug("encode: %s", stream.get_command())
 
 	@staticmethod
 	def track_timerange(track):
@@ -302,10 +318,7 @@ class Splitter:
 	def split_file(self, file):
 		stream = self.open_decode(file.path)
 		if not stream:
-			return
-
-		if self.opt.verbose and self.opt.dry_run:
-			self.print_decode_info(file.path, stream)
+			sys.exit(1)
 
 		if file.ntracks() == 1:
 			if not self.is_need_convert(stream.info()):
@@ -324,18 +337,20 @@ class Splitter:
 			trackname = self.track_name(track)
 			path = os.path.join(self.dest, trackname)
 
-			printf("split %s (%s) -> %s", quote(file.path), ts, quote(trackname))
-			printf("\n" if self.opt.dry_run else ": ")
-
 			stream.seek(track.begin)
 			reader = stream.get_reader(self.track_length(track))
 
-			out = self.encoder.open(reader, path, self.opt)
+			out = self.open_encode(reader, path)
+
+			printf("split %s (%s) -> %s", quote(file.path), ts, quote(trackname))
+			printf("\n" if self.opt.dry_run else ": ")
 
 			if self.opt.dry_run:
-				if self.opt.verbose:
-					self.print_encode_info(out)
 				continue
+
+			if out is None:
+				printf("FAILED\n")
+				sys.exit(1)
 
 			out.process()
 			out.close()
