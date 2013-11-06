@@ -5,7 +5,7 @@ from cutter.coding import to_unicode, to_bytes
 from cutter.splitter import Splitter, StreamInfo
 from cutter.tools import *
 
-from optparse import OptionParser, OptionGroup, IndentedHelpFormatter
+import argparse
 
 import signal
 import sys
@@ -55,120 +55,8 @@ def print_cue(cue):
 				if k not in ("pregap", "postgap", "title"):
 					printf("\t\t%s: %s\n", k.upper(), quote(v))
 
-def parse_args():
-	parser = OptionParser(usage = u"Usage: %prog [options] cuefile",
-		formatter=IndentedHelpFormatter(max_help_position=40))
-
-	parser.add_option("--ignore",
-		action="store_true", default=False, dest="ignore",
-		help="ignore cue parsing errors")
-
-	parser.add_option("--dump",
-		dest="dump", choices=["cue", "tags", "tracks"],
-		metavar="cue|tags|tracks",
-		help="print cue data, file tags or track names")
-
-	parser.add_option("-n", "--dry-run",
-		action="store_true", default=False, dest="dry_run")
-
-	parser.add_option("-v", "--verbose",
-		dest="verbose", action="store_true", default=False)
-
-	general = OptionGroup(parser, "General options")
-
-	general.add_option("--tag",
-		dest="tag", action="store_true", default=False,
-		help="tag existing files, do not split")
-
-	general.add_option("--coding", dest="coding",
-		help="encoding of original text")
-
-	general.add_option("-d", "--dir",
-		dest="dir", default=config.DIR, help="output directory")
-
-	general.add_option("--use-tempdir",
-		dest="use_tempdir", action="store_true",
-		help="use temporary directory for files")
-
-	general.add_option("--no-tempdir",
-		dest="use_tempdir", action="store_false",
-		help="do not use temporary directory")
-
-	general.add_option("--no-progress",
-		dest="show_progress", action="store_false")
-
-	general.add_option("--tracks", dest="tracks", help="select tracks")
-
-	parser.add_option_group(general)
-
-	enc = OptionGroup(parser, "Encoding options")
-
-	enc.add_option("-t", "--type", dest="type",
-		choices = formats.supported() + ["help"],
-		help="output file format")
-
-	enc.add_option("-C", "--compression", type="int",
-		dest="compression", metavar="FACTOR",
-		help="compression factor for output format (used for flac, ogg)")
-
-	enc.add_option("--bitrate", type="int",
-		dest="bitrate", default=config.MP3_BITRATE,
-		help="audio bitrate (used for mp3)")
-
-	parser.add_option_group(enc)
-
-	fname = OptionGroup(parser, "Filename options")
-
-	fname.add_option("--format",
-		dest="fmt", default=config.FILENAME_FORMAT,
-		help="the format string for new filenames")
-
-	fname.add_option("--convert-chars",
-		dest="convert_chars", action="store_true",
-		help="replace illegal characters in filename")
-
-	fname.add_option("--no-convert-chars",
-		dest="convert_chars", action="store_false",
-		help="do not replace characters in filename")
-
-	parser.add_option_group(fname)
-
-	format = OptionGroup(parser, "Output format")
-
-	format.add_option("-r", "--sample-rate", type="int",
-		dest="sample_rate", default=config.SAMPLE_RATE, metavar="RATE")
-
-	format.add_option("-c", "--channels", type="int",
-		dest="channels", default=config.CHANNELS)
-
-	format.add_option("-b", "--bits-per-sample", type="int",
-		dest="bits_per_sample", default=config.BITS_PER_SAMPLE, metavar="BITS")
-
-	parser.add_option_group(format)
-
-	tag = OptionGroup(parser, "Tag options")
-	tag_options = ["album", "artist", ("date", "year"), "genre",
-		"comment", "composer", "albumartist"]
-
-	for opt in tag_options:
-		if type(opt) in (list, tuple):
-			tag.add_option(*["--" + s for s in opt], dest=opt[0], default="")
-		else:
-			tag.add_option("--" + opt, dest=opt, default="")
-
-	tag.add_option("--track-total", type="int", dest="tracktotal", metavar="TOTAL")
-	tag.add_option("--track-start", type="int", dest="trackstart", metavar="START")
-
-	parser.add_option_group(tag)
-
-	return parser.parse_args()
-
-def option_check_range(option, value, min, max):
-	if value is not None and (value < min or value > max):
-		printerr("invalid %s value %d, must be in range %d .. %d", option, value, min, max)
-		return False
-
-	return True
+def parse_dir(string):
+	return to_unicode(os.path.normpath(string))
 
 def parse_tracks(string):
 	tracks = set()
@@ -180,11 +68,11 @@ def parse_tracks(string):
 		except ValueError:
 			m = re_range.match(item)
 			if not m:
-				return None
+				raise argparse.ArgumentTypeError("invalid format")
 
 			start, end = int(m.group(1)), int(m.group(2))
 			if start <= 0 or end <= 0 or start == end:
-				return None
+				raise argparse.ArgumentTypeError("invalid value")
 
 			if start > end:
 				start, end = end, start
@@ -193,23 +81,152 @@ def parse_tracks(string):
 
 	return None if len(tracks) == 0 else tracks
 
+def parse_fmt(string):
+	fmt = to_unicode(string)
+
+	if not os.path.basename(string):
+		raise argparse.ArgumentTypeError("invalid format")
+
+	fmt = os.path.normpath(fmt)
+	if fmt.startswith("/"):
+		fmt = fmt[1:]
+
+	return fmt
+
+def parse_type(string):
+	if string == "help":
+		printerr("supported formats: " + " ".join(formats.supported()))
+		sys.exit(1)
+
+	if not formats.issupported(string):
+		msg = "type %r is not supported" % string
+		raise argparse.ArgumentTypeError(msg)
+
+	return string
+
+class HelpFormatter(argparse.HelpFormatter):
+	def __init__(self, *args, **kwargs):
+		kwargs["max_help_position"] = 40
+		argparse.HelpFormatter.__init__(self, *args, **kwargs)
+
+def parse_args():
+	defaults = {
+		"dir": config.DIR or ".",
+		"fmt": config.FILENAME_FORMAT,
+		"type": config.TYPE,
+
+		"bitrate": config.MP3_BITRATE,
+
+		"convert_chars": config.CONVERT_CHARS,
+		"use_tempdir": config.USE_TEMPDIR,
+		"show_progress": config.PROGRESS,
+
+		"sample_rate": config.SAMPLE_RATE,
+		"channels": config.CHANNELS,
+		"bits_per_sample": config.BITS_PER_SAMPLE,
+	}
+
+	parser = argparse.ArgumentParser(
+		usage="%(prog)s cuefile [options]",
+		formatter_class=HelpFormatter,
+		description="cue split tool")
+
+	parser.add_argument("cuefile")
+
+	parser.add_argument("--ignore", action="store_true",
+		help="ignore cue parsing errors")
+
+	parser.add_argument("--dump",
+		choices=("cue", "tags", "tracks"),
+		help="print cue data, file tags or track names")
+
+	parser.add_argument("-n", "--dry-run", action="store_true", dest="dry_run")
+
+	parser.add_argument("-v", "--verbose", action="store_true")
+
+	general = parser.add_argument_group("General options")
+
+	general.add_argument("--tag", action="store_true",
+		help="tag existing files, do not split")
+
+	general.add_argument("--coding", help="encoding of original text")
+
+	general.add_argument("-d", "--dir", type=parse_dir, help="output directory")
+
+	general.add_argument("--use-tempdir",
+		dest="use_tempdir", action="store_true",
+		help="use temporary directory for files")
+
+	general.add_argument("--no-tempdir",
+		dest="use_tempdir", action="store_false",
+		help="do not use temporary directory")
+
+	general.add_argument("--no-progress", dest="show_progress", action="store_false")
+
+	general.add_argument("--tracks", type=parse_tracks, help="select tracks")
+
+	enc = parser.add_argument_group("Encoding options")
+
+	enc.add_argument("-t", "--type", type=parse_type, help="output file format")
+
+	enc.add_argument("-C", "--compression", type=int, metavar="FACTOR",
+		help="compression factor for output format (used for flac, ogg)")
+
+	enc.add_argument("--bitrate", type=int, help="audio bitrate (used for mp3)")
+
+	fname = parser.add_argument_group("Filename options")
+
+	fname.add_argument("--format", type=parse_fmt, dest="fmt",
+		help="the format string for new filenames")
+
+	fname.add_argument("--convert-chars",
+		dest="convert_chars", action="store_true",
+		help="replace illegal characters in filename")
+
+	fname.add_argument("--no-convert-chars",
+		dest="convert_chars", action="store_false",
+		help="do not replace characters in filename")
+
+	format = parser.add_argument_group("Output format")
+
+	format.add_argument("-r", "--sample-rate", type=int,
+		dest="sample_rate", metavar="RATE")
+
+	format.add_argument("-c", "--channels", type=int)
+
+	format.add_argument("-b", "--bits-per-sample", type=int,
+		dest="bits_per_sample", metavar="BITS")
+
+	tag = parser.add_argument_group("Tag options")
+	tag_options = ["album", "artist", ("date", "year"), "genre",
+		"comment", "composer", "albumartist"]
+
+	for opt in tag_options:
+		if type(opt) in (list, tuple):
+			tag.add_argument(*["--" + s for s in opt], default="")
+		else:
+			tag.add_argument("--" + opt, default="")
+
+	tag.add_argument("--track-total", type=int, dest="tracktotal", metavar="TOTAL")
+	tag.add_argument("--track-start", type=int, dest="trackstart", metavar="START")
+
+	parser.set_defaults(**defaults)
+
+	return parser.parse_args()
+
+def option_check_range(option, value, min, max):
+	if value is not None and (value < min or value > max):
+		printerr("invalid %s value %d, must be in range %d .. %d", option, value, min, max)
+		return False
+
+	return True
+
 def process_options(opt):
 	def choose(a, b):
 		return a if a is not None else b
 
-	if opt.type == "help":
-		printerr("supported formats: " + " ".join(formats.supported()))
-		return False
-
-	if opt.type is None and config.TYPE:
-		if not formats.issupported(config.TYPE):
-			printerr("invalid configuration: type '%s' is not supported", config.TYPE)
-			return False
-
-		opt.type = config.TYPE
-
 	if not opt.dump and opt.type is None:
-		printerr("--type option is missed")
+		printerr("--type option is required")
 		return False
 
 	if opt.type == "flac":
@@ -224,37 +241,8 @@ def process_options(opt):
 		if not option_check_range("bitrate", opt.bitrate, 32, 320):
 			return False
 
-	if not opt.dir:
-		opt.dir = u"."
-	else:
-		opt.dir = to_unicode(os.path.normpath(opt.dir))
-
-	opt.fmt = to_unicode(opt.fmt)
-	if not os.path.basename(opt.fmt):
-		printerr("invalid format option \"%s\"", opt.fmt)
-		return False
-	else:
-		opt.fmt = os.path.normpath(opt.fmt)
-		if opt.fmt.startswith("/"):
-			opt.fmt = opt.fmt[1:]
-
-	if opt.convert_chars is None:
-		opt.convert_chars = config.CONVERT_CHARS
-	if opt.use_tempdir is None:
-		opt.use_tempdir = config.USE_TEMPDIR
-
-	if opt.tracks is not None:
-		tracks = parse_tracks(opt.tracks)
-		if not tracks:
-			printerr("invalid tracks option \"%s\"", opt.tracks)
-			return False
-
-		opt.tracks = tracks
-
 	if not os.isatty(sys.stdout.fileno()):
 		opt.show_progress = False
-	elif opt.show_progress is None:
-		opt.show_progress = config.PROGRESS
 
 	return True
 
@@ -277,20 +265,16 @@ def sigint_handler(sig, frame):
 def main():
 	signal.signal(signal.SIGINT, sigint_handler)
 
-	options, args = parse_args()
+	options = parse_args()
 	if not process_options(options):
 		sys.exit(1)
-
-	if len(args) != 1:
-		printf("Usage: %s [options] cuefile\n", progname)
-		return 1
 
 	def on_error(err):
 		printerr("%d: %s\n" % (err.line, err))
 		if not options.ignore:
 			raise StopIteration
 
-	cuepath = to_unicode(args[0])
+	cuepath = to_unicode(options.cuefile)
 	if os.path.isdir(cuepath):
 		cuepath = find_cuefile(cuepath)
 		if options.dry_run:

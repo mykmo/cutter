@@ -12,4 +12,4 @@ OK 11. make cchardet optional
 OK 12. manually convert files
 OK 13. use python wave module
 OK 14. show progress of encoding
-15. use argparse
+OK 15. use argparse
