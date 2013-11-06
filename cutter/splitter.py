@@ -1,4 +1,5 @@
 from . coding import to_unicode, to_bytes
+from . progress import *
 from . tools import *
 
 from . import formats
@@ -73,65 +74,6 @@ class StreamInfo:
 			return None
 
 		return stream.info()
-
-class Progress:
-	def __init__(self, message):
-		self.progress_shown = False
-		self.message = message
-
-	def erase(self, n):
-		if not self.progress_shown:
-			self.last_length = n
-			self.progress_shown = True
-			return 0
-
-		prev, self.last_length = self.last_length, n
-		return prev
-
-	def show(self, msg):
-		printf("%s", "\b" * self.erase(len(msg)) + msg)
-
-	def do_print(self):
-		if self.percent > self.last_percent:
-			self.show("%3d%% " % self.percent)
-			self.last_percent = self.percent
-
-	def clear(self):
-		if self.last_length:
-			self.show(" " * self.last_length)
-
-	def init(self, total):
-		self.total = total
-		self.current = 0
-		self.percent = 0
-		self.last_percent = -1
-		self.last_length = 0
-
-		self.do_print()
-
-	def update(self, value):
-		self.current += value
-		percent = 100 * self.current // self.total
-		self.percent = min(max(percent, 0), 100)
-
-		self.do_print()
-
-	def finish(self):
-		n = max(self.last_length - len(self.message), 0)
-		self.show(self.message + " " * n + "\n")
-
-class DummyProgress:
-	def __init__(self, message):
-		self.message = message
-
-	def init(self, total):
-		pass
-
-	def update(self, value):
-		pass
-
-	def finish(self):
-		printf("%s\n", self.message)
 
 class Splitter:
 	EXT = ["ape", "flac", "wv"]
@@ -387,10 +329,12 @@ class Splitter:
 		return track.end - track.begin
 
 	def progress(self, message):
-		if self.opt.show_progress:
-			return Progress(message)
+		func = lambda msg: printf("%s", msg)
 
-		return DummyProgress(message)
+		if self.opt.show_progress:
+			return PercentProgress(func, message)
+
+		return DummyProgress(func, message)
 
 	def split_file(self, file):
 		stream = self.open_decode(file.path)
