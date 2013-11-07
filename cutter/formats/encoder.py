@@ -80,13 +80,13 @@ class Encoder:
 
 		progress.init(self.reader.size())
 
-		while True:
-			data = self.reader.read(self.FRAME_BUFFER_SIZE)
-			if not len(data):
-				break
+		data = self.reader.read(self.FRAME_BUFFER_SIZE)
 
+		while len(data):
 			self.writer.writeframesraw(data)
 			progress.update(len(data))
+
+			data = self.reader.read(self.FRAME_BUFFER_SIZE)
 
 		progress.finish()
 

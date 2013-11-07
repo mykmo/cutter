@@ -1,3 +1,4 @@
+import itertools
 import codecs
 import sys
 import re
@@ -12,7 +13,7 @@ class Track:
 		try:
 			self.number = int(number)
 		except ValueError:
-			raise InvalidCommand("invalid number \"%s\"" % number)
+			raise InvalidCommand("invalid number '%s'" % number)
 
 		self.type = datatype
 		self._indexes = {}
@@ -196,7 +197,7 @@ class CueParser:
 	@staticmethod
 	def parse_timestamp(time):
 		if not CueParser.re_timestamp.match(time):
-			raise InvalidCommand("invalid timestamp \"%s\"" % time)
+			raise InvalidCommand("invalid timestamp '%s'" % time)
 
 		m, s, f = map(int, time.split(":"))
 		return (m * 60 + s) * 75 + f
@@ -223,7 +224,7 @@ class CueParser:
 		try:
 			number = int(number)
 		except ValueError:
-			raise InvalidCommand("invalid number \"%s\"" % number)
+			raise InvalidCommand("invalid number '%s'" % number)
 		if number is 0 and "pregap" in self.track._attrs:
 			raise InvalidCommand("conflict with previous PREGAP")
 		if number in self.track._indexes:
@@ -259,7 +260,7 @@ class CueParser:
 		cmd = opt.lower()
 		if value and cmd in self.rem_commands:
 			if len(args):
-				raise InvalidCommand("extra arguments for \"%s\"" % opt)
+				raise InvalidCommand("extra arguments for '%s'" % opt)
 			self.set_attr(cmd, value, obj = self.cue)
 
 	def parse_skip(self, *args):
@@ -328,41 +329,38 @@ def __read_file(filename, coding = None):
 
 	return encoded
 
-def read(filename, coding = None, on_error = None):
-	if on_error:
-		def msg(fmt, *args):
-			err = CueParserError(fmt % args)
-			err.line = nline
-			on_error(err)
-	else:
-		msg = lambda *args: None
+def read(filename, coding=None, error_handler=None, ignore_errors=False):
+	def report(fmt, *args):
+		if error_handler:
+			error_handler(lineno, fmt % args)
+
+	def parse_line(line):
+		data = line.split(None, 1)
+		cmd = data[0]
+
+		if len(data) is 1:
+			report("invalid command '%s': arg missed", cmd)
+		else:
+			try:
+				parser.parse(*data)
+				return True
+			except UnknownCommand:
+				report("unknown command '%s'", cmd)
+			except InvalidContext:
+				report("invalid context for command '%s'", cmd)
+			except InvalidCommand as err:
+				report("invalid command '%s': %s", cmd, err)
+			except CueParserError as err:
+				report("%s", err)
+
+		return False
 
 	cuefile = __read_file(filename, coding)
 	parser = CueParser()
 
-	nline = 0
-
-	for line in cuefile.split("\n"):
-		nline = nline + 1
-		s = line.strip()
-		if not len(s):
-			continue
-
-		data = s.split(None, 1)
-		if len(data) is 1:
-			msg("invalid command \"%s\": arg missed", data[0])
-			continue
-
-		try:
-			parser.parse(*data)
-		except UnknownCommand:
-			msg("unknown command \"%s\"", data[0])
-		except InvalidContext:
-			msg("invalid context for command \"%s\"", data[0])
-		except InvalidCommand as err:
-			msg("invalid command \"%s\": %s", data[0], err)
-		except CueParserError as err:
-			msg("%s", err)
+	for line, lineno in zip(cuefile.split("\n"), itertools.count(1)):
+		if line and not parse_line(line.strip()) and not ignore_errors:
+			return None
 
 	parser.calc_offsets()
 	return parser.get_cue()

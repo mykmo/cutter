@@ -269,24 +269,19 @@ def main():
 	if not process_options(options):
 		sys.exit(1)
 
-	def on_error(err):
-		printerr("%d: %s\n" % (err.line, err))
-		if not options.ignore:
-			raise StopIteration
-
 	cuepath = to_unicode(options.cuefile)
 	if os.path.isdir(cuepath):
 		cuepath = find_cuefile(cuepath)
 		if options.dry_run:
 			debug("use cue file %s", quote(cuepath))
 
+	cuesheet = None
+	cue_error = lambda line, msg: printerr("%d: %s\n", line, msg)
+
 	try:
-		cuesheet = cue.read(cuepath, options.coding, on_error=on_error)
-	except StopIteration:
-		return 1
+		cuesheet = cue.read(cuepath, options.coding, cue_error, options.ignore)
 	except IOError as err:
 		printerr("open %s: %s", err.filename, err.strerror)
-		return 1
 	except Exception as err:
 		msg = "%s (%s)" % (err, err.__class__.__name__)
 
@@ -295,6 +290,7 @@ def main():
 		else:
 			printerr("%s\n", msg)
 
+	if not cuesheet:
 		return 1
 
 	cuesheet.dir = os.path.dirname(cuepath)
