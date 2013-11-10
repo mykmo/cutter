@@ -191,13 +191,13 @@ class Splitter:
 				debug("skip file %s: no tracks", quote(file.name))
 				continue
 
-			path = self.cue.dir + file.name
+			path = os.path.join(self.cue.dir, file.name)
 			if not os.path.exists(path):
 				real = self.find_realfile(file.name)
 				if not real:
 					printerr("no such file %s", quote(file.name))
 					sys.exit(1)
-				path = self.cue.dir + real
+				path = os.path.join(self.cue.dir, real)
 
 			lst.append(self.File(file, path))
 
@@ -271,8 +271,8 @@ class Splitter:
 	def print_command_error(name, stream):
 		status, msg = stream.get_status()
 
-		cmd = stream.get_command()
-		printerr("%s failed (%s), command: %s", name, status, cmd)
+		cmd = stream.describe()
+		printerr("%s failed (%s), cmd: %s", name, status, cmd)
 		for line in msg.split("\n"):
 			if len(line):
 				printf("> %s\n", line)

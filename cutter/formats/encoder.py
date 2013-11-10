@@ -53,13 +53,13 @@ class Encoder:
 			return getattr(self.fileobj, attr)
 
 	def __init__(self, handler, reader, filename, options):
+		self.proc = None
 		self.handler = handler
 
 		args = self.handler.encode(filename, options, reader.info())
 		self.command = " ".join(map(quote, args))
 
 		if options.dry_run:
-			self.proc = None
 			return
 
 		self.proc = Command(args, stdin=PIPE)
@@ -90,7 +90,7 @@ class Encoder:
 
 		progress.finish()
 
-	def get_command(self):
+	def describe(self):
 		return self.command
 
 	def get_status(self):

@@ -36,16 +36,13 @@ class Command:
 	def get_status(self):
 		return self.status, self.status_msg
 
-	def close(self, msg=""):
+	def close(self):
 		if self.proc is None:
 			return
 
 		self.status = self.proc.wait()
 		if self.status and self.proc.stderr:
 			self.status_msg = to_unicode(self.proc.stderr.read())
-
-		if msg and not self.status_msg:
-			self.status_msg = msg
 
 		if self.status < 0:
 			self.status = strsignal(-self.status)

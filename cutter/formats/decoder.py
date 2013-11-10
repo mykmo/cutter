@@ -12,7 +12,7 @@ class DecoderError(Exception):
 class StreamInfo:
 	pass
 
-class Decoder:
+class BaseDecoder:
 	class Reader:
 		def __init__(self, stream, nframes):
 			self.stream = stream
@@ -45,21 +45,18 @@ class Decoder:
 
 			return data
 
-	def __init__(self, handler, filename, options=None):
+	def __init__(self, handler):
+		self.reader = None
 		self.handler = handler
 
-		args = self.handler.decode(filename)
-		self.command = " ".join(map(quote, args))
-
-		self.proc = Command(args, stdout=PIPE, stderr=PIPE)
-		if not self.proc.ready():
-			return
-
+	def _init_reader(self, source):
 		try:
-			self.reader = wave.open(self.proc.stdout, "r")
+			self.reader = wave.open(source, "r")
 		except Exception as exc:
-			self.proc.stdout.close()
-			self.proc.close("Exception: wave.open: %s" % repr(exc))
+			self.close()
+
+			self.status = "Exception"
+			self.status_msg = "wave.open: %s" % exc
 			return
 
 		self._channels		= self.reader.getnchannels()
@@ -67,7 +64,7 @@ class Decoder:
 		self._sample_rate	= self.reader.getframerate()
 
 	def ready(self):
-		return self.proc.ready()
+		return self.reader is not None
 
 	def channels(self):
 		return self._channels
@@ -106,25 +103,65 @@ class Decoder:
 
 		return self.Reader(self, nframes)
 
-	def get_command(self):
-		return self.command
+	def describe(self):
+		return "-"
 
 	def get_status(self):
-		return self.proc.get_status()
+		if hasattr(self, "status"):
+			return self.status, self.status_msg
+
+		return None, ""
 
 	def close(self):
-		if self.proc.ready():
+		if self.reader:
 			self.reader.close()
-			self.proc.stdout.close()
-			self.proc.close()
+			self.reader = None
 
 	def __del__(self):
 		self.close()
 
-class DummyDecoder(Decoder):
-	class DummyReader(Decoder.Reader):
+class WavDecoder(BaseDecoder):
+	def __init__(self, handler, filename, options=None):
+		BaseDecoder.__init__(self, handler)
+
+		self.filename = filename
+		self._init_reader(filename)
+
+	def describe(self):
+		return self.filename
+
+class AnyDecoder(BaseDecoder):
+	def __init__(self, handler, filename, options=None):
+		BaseDecoder.__init__(self, handler)
+
+		args = self.handler.decode(filename)
+		self.command = " ".join(map(quote, args))
+
+		self.proc = Command(args, stdout=PIPE, stderr=PIPE)
+		if not self.proc.ready():
+			return
+
+		self._init_reader(self.proc.stdout)
+
+	def describe(self):
+		return self.command
+
+	def get_status(self):
+		if self.proc.status_msg:
+			return self.proc.get_status()
+
+		return BaseDecoder.get_status(self)
+
+	def close(self):
+		if self.proc.ready():
+			BaseDecoder.close(self)
+			self.proc.stdout.close()
+			self.proc.close()
+
+class DummyDecoder:
+	class DummyReader(BaseDecoder.Reader):
 		def __init__(self, *args):
-			Decoder.Reader.__init__(self, *args)
+			BaseDecoder.Reader.__init__(self, *args)
 
 		def info(self):
 			return self.stream.info()
@@ -132,8 +169,11 @@ class DummyDecoder(Decoder):
 		def read(self, *args):
 			return []
 
-	def __init__(self, *args, **kwargs):
-		Decoder.__init__(self, *args, **kwargs)
+	def __init__(self, orig):
+		self.orig = orig
+
+	def __getattr__(self, attr):
+		return getattr(self.orig, attr)
 
 	def seek(self, *args):
 		pass
@@ -143,7 +183,13 @@ class DummyDecoder(Decoder):
 
 class DecoderHandler(Handler):
 	def open(self, filename, options=None):
-		if options and options.dry_run:
-			return DummyDecoder(self.handler, filename, options)
+		if self.handler.name == "wav":
+			cls = WavDecoder
 		else:
-			return Decoder(self.handler, filename, options)
+			cls = AnyDecoder
+
+		stream = cls(self.handler, filename, options)
+		if options and options.dry_run:
+			stream = DummyDecoder(stream)
+
+		return stream

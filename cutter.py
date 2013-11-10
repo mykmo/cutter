@@ -250,7 +250,7 @@ def find_cuefile(path):
 	for file in os.listdir(path):
 		fullname = os.path.join(path, file)
 		if os.path.isfile(fullname) and file.endswith(".cue"):
-			return fullname
+			return os.path.normpath(fullname)
 
 	printerr("no cue file")
 	sys.exit(1)
@@ -294,8 +294,6 @@ def main():
 		return 1
 
 	cuesheet.dir = os.path.dirname(cuepath)
-	if cuesheet.dir:
-		cuesheet.dir += "/"
 
 	switch(options.dump, {
 		"cue":		lambda: print_cue(cuesheet),
