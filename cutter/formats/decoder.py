@@ -53,10 +53,10 @@ class BaseDecoder:
 		try:
 			self.reader = wave.open(source, "r")
 		except Exception as exc:
-			self.close()
+			self.close(True)
 
-			self.status = "Exception"
-			self.status_msg = "wave.open: %s" % exc
+			self.status = u"Exception"
+			self.status_msg = u"wave.open: %s" % exc
 			return
 
 		self._channels		= self.reader.getnchannels()
@@ -112,7 +112,7 @@ class BaseDecoder:
 
 		return None, ""
 
-	def close(self):
+	def close(self, forced=False):
 		if self.reader:
 			self.reader.close()
 			self.reader = None
@@ -152,9 +152,13 @@ class AnyDecoder(BaseDecoder):
 
 		return BaseDecoder.get_status(self)
 
-	def close(self):
+	def close(self, forced=False):
 		if self.proc.ready():
 			BaseDecoder.close(self)
+
+			if forced:
+				self.proc.terminate()
+
 			self.proc.stdout.close()
 			self.proc.close()
 
@@ -180,6 +184,9 @@ class DummyDecoder:
 
 	def get_reader(self, *args):
 		return self.DummyReader(self, *args)
+
+	def close(self):
+		self.orig.close(True)
 
 class DecoderHandler(Handler):
 	def open(self, filename, options=None):

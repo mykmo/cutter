@@ -53,7 +53,7 @@ class Command:
 		if self.proc is None:
 			raise CommandError("command not started")
 
-		if attr not in ("stdin", "stdout", "stderr"):
+		if attr not in ("stdin", "stdout", "stderr", "terminate"):
 			raise CommandError("unknown attribute '%s'" % attr)
 
 		return getattr(self.proc, attr)

@@ -3,6 +3,7 @@ from . progress import *
 from . tools import *
 
 from . import formats
+from . import text
 
 from tempfile import mkdtemp
 
@@ -274,8 +275,10 @@ class Splitter:
 		cmd = stream.describe()
 		printerr("%s failed (%s), cmd: %s", name, status, cmd)
 		for line in msg.split("\n"):
+			line = ''.join(filter(text.isprint, line))
+
 			if len(line):
-				printf("> %s\n", line)
+				sys.stderr.write("> %s\n" % line)
 
 	def open_decode(self, path):
 		stream = formats.decoder_open(path, self.opt)
