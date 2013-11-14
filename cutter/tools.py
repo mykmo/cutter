@@ -19,6 +19,10 @@ def printerr(fmt, *args):
 		msg += "\n"
 	sys.stderr.write("** " + progname + ": " + msg)
 
+def fatal(fmt, *args):
+	printerr(fmt, *args)
+	sys.exit(1)
+
 def debug(fmt, *args):
 	msg = fmt % args
 	if msg[-1] != "\n":

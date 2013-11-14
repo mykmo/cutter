@@ -112,7 +112,7 @@ class Splitter:
 			sys.exit(1)
 
 	def init_tags(self):
-		self.tracktotal = self.opt.tracktotal or len(list(self.all_tracks()))
+		self.tracktotal = self.opt.tracktotal or len(self.all_tracks())
 
 		self.tags = {
 			"album": self.opt.album or self.cue.get("title"),
@@ -134,12 +134,13 @@ class Splitter:
 		self.dest = os.path.join(self.opt.dir, tmp)
 		track_fmt = os.path.basename(self.opt.fmt)
 
+		self.titles = list(self.opt.titles) if self.opt.titles else None
+
 		tracknumber = self.opt.trackstart or 1
 		self.track_info = {}
 		for track in self.all_tracks():
-			self.track_info[track] = self.get_track_info(
-				track, tracknumber, track_fmt
-			)
+			info = self.get_track_info(track, tracknumber, track_fmt)
+			self.track_info[track] = info
 			tracknumber += 1
 
 	def __init__(self, cue, opt):
@@ -153,12 +154,14 @@ class Splitter:
 		self.init_tags()
 
 	def get_track_info(self, track, tracknumber, fmt):
+		title = self.titles.pop(0) if self.titles else None
+
 		tags = dict(self.tags)
 		tags.update({
 			"tracknumber": tracknumber,
 			"tracktotal": self.tracktotal,
 
-			"title": track.get("title") or "track",
+			"title": title or track.get("title") or "track",
 			"artist": self.opt.artist or track.get("performer")
 				or self.cue.get("performer"),
 			"composer": self.opt.composer or track.get("songwriter")
@@ -387,8 +390,7 @@ class Splitter:
 		names = [x.name for x in self.track_info.values()]
 		dup = [k for k, v in collections.Counter(names).items() if v > 1]
 		if dup:
-			printerr("track names are duplicated: %s", " ".join(dup))
-			sys.exit(1)
+			fatal("track names are duplicated: %s", " ".join(dup))
 
 	def transfer_files(self, source, dest):
 		for file in sorted(os.listdir(source)):
@@ -432,8 +434,7 @@ class Splitter:
 			try:
 				shutil.rmtree(self.dest)
 			except Exception as err:
-				printerr("rm %s failed: %s\n", self.dest, err)
-				sys.exit(1)
+				fatal("rm %s failed: %s\n", self.dest, err)
 
 	def tag_files(self):
 		for track in self.all_tracks():
@@ -452,6 +453,11 @@ class Splitter:
 			self.tracks = [t for t, n in mapped if n in self.opt.tracks]
 
 		return self.tracks
+
+	def get_titles(self):
+		for track in self.all_tracks():
+			tags = self.track_tags(track)
+			yield tags["title"]
 
 	def dump_tags(self):
 		add_line = False

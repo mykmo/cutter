@@ -17,8 +17,7 @@ re_range = re.compile("^(\d+)-(\d+)$")
 try:
 	from cutter import config
 except Exception as err:
-	printerr("import config failed: %s", err)
-	sys.exit(0)
+	fatal("import config failed: %s", err)
 
 def print_cue(cue):
 	for k, v in cue.attrs():
@@ -95,14 +94,25 @@ def parse_fmt(string):
 
 def parse_type(string):
 	if string == "help":
-		printerr("supported formats: " + " ".join(formats.supported()))
-		sys.exit(1)
+		fatal("supported formats: " + " ".join(formats.supported()))
 
 	if not formats.issupported(string):
 		msg = "type %r is not supported" % string
 		raise argparse.ArgumentTypeError(msg)
 
 	return string
+
+def read_titles(filename):
+	if filename == "-":
+		fp = sys.stdin
+	else:
+		try:
+			fp = open(filename)
+		except IOError as err:
+			msg = "open %s: %s" % (err.filename, err.strerror)
+			raise argparse.ArgumentTypeError(msg)
+
+	return list(filter(None, [s.strip() for s in fp.readlines()]))
 
 class HelpFormatter(argparse.HelpFormatter):
 	def __init__(self, *args, **kwargs):
@@ -210,6 +220,10 @@ def parse_args():
 	tag.add_argument("--track-total", type=int, dest="tracktotal", metavar="TOTAL")
 	tag.add_argument("--track-start", type=int, dest="trackstart", metavar="START")
 
+	tag.add_argument("--export-titles-to", dest="export_titles", metavar="FILE")
+	tag.add_argument("--import-titles-from", type=read_titles,
+		dest="titles", metavar="FILE")
+
 	parser.set_defaults(**defaults)
 
 	return parser.parse_args()
@@ -244,6 +258,10 @@ def process_options(opt):
 	if not os.isatty(sys.stdout.fileno()):
 		opt.show_progress = False
 
+	if opt.dump and opt.export_titles != None:
+		printerr("--dump and --export-titles-to cannot be used together")
+		return False
+
 	return True
 
 def find_cuefile(path):
@@ -252,15 +270,55 @@ def find_cuefile(path):
 		if os.path.isfile(fullname) and file.endswith(".cue"):
 			return os.path.normpath(fullname)
 
-	printerr("no cue file")
-	sys.exit(1)
+	fatal("no cue file")
 
 def switch(value, opts):
 	opts.get(value, lambda: None)()
 
 def sigint_handler(sig, frame):
-	printf("\n")
-	sys.exit(1)
+	fatal("\n")
+
+def fall_on_exception(func):
+	def safe_method(self, *args):
+		try:
+			func(self, *args)
+		except Exception as exc:
+			if hasattr(exc, "strerror"):
+				msg = exc.strerror
+			else:
+				msg = str(exc)
+
+			name = func.__name__
+			fatal(name + " %s: %s", quote(self.filename), msg)
+
+	return safe_method
+
+class File:
+	def __init__(self, filename, mode):
+		self.filename = filename
+		self.mode = mode
+		self.open()
+
+	@fall_on_exception
+	def open(self):
+		self.fp = open(self.filename, self.mode)
+
+	@fall_on_exception
+	def write(self, data):
+		self.fp.write(data)
+
+	@fall_on_exception
+	def close(self):
+		self.fp.close()
+
+def write_titles(splitter, filename):
+	fp = File(filename, "w") if filename != "-" else sys.stdout
+
+	for name in splitter.get_titles():
+		fp.write(name + "\n")
+
+	if fp != sys.stdout:
+		fp.close()
 
 def main():
 	signal.signal(signal.SIGINT, sigint_handler)
@@ -281,25 +339,31 @@ def main():
 	try:
 		cuesheet = cue.read(cuepath, options.coding, cue_error, options.ignore)
 	except IOError as err:
-		printerr("open %s: %s", err.filename, err.strerror)
+		fatal("open %s: %s", err.filename, err.strerror)
 	except Exception as err:
 		msg = "%s (%s)" % (err, err.__class__.__name__)
 
 		if hasattr(err, "filename"):
-			printerr("%s: %s: %s\n", err.filename, msg)
+			fatal("%s: %s: %s\n", err.filename, msg)
 		else:
-			printerr("%s\n", msg)
-
-	if not cuesheet:
-		return 1
+			fatal("%s\n", msg)
 
 	cuesheet.dir = os.path.dirname(cuepath)
 
+	if options.dump == "cue":
+		print_cue(cuesheet)
+		return 0
+
+	splitter = Splitter(cuesheet, options)
+
+	if options.export_titles != None:
+		write_titles(splitter, options.export_titles)
+		return 0
+
 	switch(options.dump, {
-		"cue":		lambda: print_cue(cuesheet),
-		"tags":		lambda: Splitter(cuesheet, options).dump_tags(),
-		"tracks":	lambda: Splitter(cuesheet, options).dump_tracks(),
-		None:		lambda: Splitter(cuesheet, options).split()
+		"tags":		lambda: splitter.dump_tags(),
+		"tracks":	lambda: splitter.dump_tracks(),
+		None:		lambda: splitter.split()
 	})
 
 	return 0
