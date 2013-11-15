@@ -321,8 +321,6 @@ def write_titles(splitter, filename):
 		fp.close()
 
 def main():
-	signal.signal(signal.SIGINT, sigint_handler)
-
 	options = parse_args()
 	if not process_options(options):
 		sys.exit(1)
@@ -369,4 +367,5 @@ def main():
 	return 0
 
 if __name__ == '__main__':
+	signal.signal(signal.SIGINT, sigint_handler)
 	sys.exit(main())
