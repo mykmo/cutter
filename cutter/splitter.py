@@ -302,7 +302,7 @@ class Splitter:
 
 		if self.opt.dry_run:
 			if self.opt.verbose:
-				debug("encode: %s", stream.get_command())
+				debug("encode: %s", stream.describe())
 			return stream
 
 		if not stream.ready():
@@ -313,7 +313,7 @@ class Splitter:
 
 	def print_decode_info(self, path, stream):
 		info = stream.info()
-		debug("decode: %s", stream.get_command())
+		debug("decode: %s", stream.describe())
 		debug("input: %s [%s] (%d/%d, %d ch)", quote(path),
 			info.type, info.bits_per_sample, info.sample_rate,
 			info.channels)
