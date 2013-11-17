@@ -213,9 +213,9 @@ def parse_args():
 
 	for opt in tag_options:
 		if type(opt) in (list, tuple):
-			tag.add_argument(*["--" + s for s in opt], default="")
+			tag.add_argument(*["--" + s for s in opt], type=to_unicode, default="")
 		else:
-			tag.add_argument("--" + opt, default="")
+			tag.add_argument("--" + opt, type=to_unicode, default="")
 
 	tag.add_argument("--track-total", type=int, dest="tracktotal", metavar="TOTAL")
 	tag.add_argument("--track-start", type=int, dest="trackstart", metavar="START")

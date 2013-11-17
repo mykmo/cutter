@@ -27,7 +27,7 @@ class Track:
 
 	def get(self, attr):
 		return self._attrs.get(attr,
-			None if attr in ("pregap", "postgap") else ""
+			None if attr in ("pregap", "postgap") else u""
 		)
 
 	def isaudio(self):
@@ -75,7 +75,7 @@ class Cue:
 		return filter(File.isaudio if filter_audio else None, self._files)
 
 	def get(self, attr):
-		return self._attrs.get(attr, "")
+		return self._attrs.get(attr, u"")
 
 	def add_file(self, file):
 		self._files.append(file)
