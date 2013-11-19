@@ -90,7 +90,7 @@ class Splitter:
 	class TrackInfo:
 		def __init__(self, name, tags):
 			self.name = name
-			self.tags = tags
+			self.tags = {k: v for k, v in tags.items() if v != u''}
 
 	@staticmethod
 	def format_by_tags(fmt, tags, replace=False):

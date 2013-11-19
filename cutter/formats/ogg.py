@@ -20,8 +20,7 @@ class OggHandler(SoxHandler):
 			return False
 
 		for k, v in tags.items():
-			if v is not u"":
-				proc.stdin.write(to_bytes("%s=%s\n" % (k.upper(), v)))
+			proc.stdin.write(to_bytes("%s=%s\n" % (k.upper(), v)))
 
 		proc.stdin.close()
 		proc.close()
