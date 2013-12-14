@@ -332,7 +332,7 @@ def main():
 			debug("use cue file %s", quote(cuepath))
 
 	cuesheet = None
-	cue_error = lambda line, msg: printerr("%d: %s\n", line, msg)
+	cue_error = lambda line, msg: printerr("%s:%d: %s\n", cuepath, line, msg)
 
 	try:
 		cuesheet = cue.read(cuepath, options.coding, cue_error, options.ignore)
@@ -345,6 +345,9 @@ def main():
 			fatal("%s: %s: %s\n", err.filename, msg)
 		else:
 			fatal("%s\n", msg)
+	else:
+		if not cuesheet:
+			sys.exit(1)
 
 	cuesheet.dir = os.path.dirname(cuepath)
 
