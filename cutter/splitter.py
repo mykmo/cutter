@@ -39,33 +39,6 @@ def mkdir(path):
 def convert_characters(path):
 	return "".join([ILLEGAL_CHARACTERS_MAP.get(ch, ch) for ch in path])
 
-class TempLink:
-	def __init__(self, path, name):
-		self.tmpdir = mkdtemp(prefix = "temp-")
-		self.linkpath = "%s/%s" % (self.tmpdir, name)
-
-		try:
-			os.symlink(path, self.tmpdir + "/" + name)
-		except Exception as err:
-			os.rmdir(self.tmpdir)
-			raise err
-
-	def remove(self):
-		os.unlink(self.linkpath)
-		os.rmdir(self.tmpdir)
-
-	def __repr__(self):
-		return "TempLink('%s')" % self.linkpath
-
-	def __str__(self):
-		return self.linkpath
-
-	def __enter__(self):
-		return self
-
-	def __exit__(self, *args):
-		self.remove()
-
 class StreamInfo:
 	@staticmethod
 	def get(name):
