@@ -359,7 +359,8 @@ def read(filename, coding=None, error_handler=None, ignore_errors=False):
 	parser = CueParser()
 
 	for line, lineno in zip(cuefile.split("\n"), itertools.count(1)):
-		if line and not parse_line(line.strip()) and not ignore_errors:
+		line = line.strip()
+		if line and not parse_line(line) and not ignore_errors:
 			return None
 
 	parser.calc_offsets()
