@@ -169,7 +169,7 @@ class CueParser:
 		cur = []
 
 		def push():
-			lst.append("".join(cur))
+			lst.append("".join(cur).strip())
 			cur[:] = []
 
 		for ch in args:
