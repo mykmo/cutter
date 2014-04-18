@@ -256,11 +256,10 @@ class CueParser:
 		if self.track._indexes:
 			raise InvalidCommand("must appear before any INDEX commands")
 
-	def parse_rem(self, opt, value = None, *args):
+	def parse_rem(self, opt, *args):
 		cmd = opt.lower()
-		if value and cmd in self.rem_commands:
-			if len(args):
-				raise InvalidCommand("extra arguments for '%s'" % opt)
+		if len(args) and cmd in self.rem_commands:
+			value = " ".join(args)
 			self.set_attr(cmd, value, obj = self.cue)
 
 	def parse_skip(self, *args):
