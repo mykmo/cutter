@@ -42,7 +42,7 @@ def decoder(name):
 	return DecoderHandler(handler_type())
 
 def decoder_open(filename, *args, **kwargs):
-	ext = filename.rpartition(".")[-1]
+	ext = filename.rpartition(".")[-1].lower()
 	handler = decoder(ext)
 	if handler is None:
 		return None
