@@ -226,6 +226,12 @@ class Splitter:
 
 	def copy_file(self, file):
 		track = list(file.tracks())[0]
+
+		if track not in self.tracks:
+			if self.opt.verbose:
+				printf("copy %s: SKIP\n", quote(file.path))
+			return
+
 		path = self.track_path(track)
 
 		printf("copy %s -> %s", quote(file.path), quote(path))
